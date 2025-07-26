@@ -29,3 +29,9 @@ python voice_test_google.py
 python pdf2audio_google.py books/gold-rush-adventures.pdf  # gtts -> we can not change voice unless we have gtts api key
 python pdf2audio_coqui.py books/gold-rush-adventures.pdf 
 ```
+
+
+## References
+
+- [TTS](https://github.com/coqui-ai/TTS)
+- [gTTS](https://pypi.org/project/gTTS/)
