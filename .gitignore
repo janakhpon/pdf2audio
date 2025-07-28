@@ -221,6 +221,8 @@ audio/
 *.m4a
 *.ogg
 
+books/
+
 # Processed text files
 cleaned_texts_llm/
 *.txt
