@@ -205,3 +205,110 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# PDF to Audio Converter specific ignores
+# ======================================
+
+# Model cache directory (contains downloaded ML models)
+models/
+models--*/
+
+# Audio output files
+audio/
+*.mp3
+*.wav
+*.flac
+*.m4a
+*.ogg
+
+# Processed text files
+cleaned_texts_llm/
+*.txt
+*.json
+
+# Log files
+*.log
+pdf2audio_llm.log
+logs/
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+*.temp
+
+# Large PDF files (optional - uncomment if you don't want to track PDFs)
+# books/*.pdf
+
+# Cache directories
+.cache/
+cache/
+__pycache__/
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# IDE specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Test files
+test_*.py
+*_test.py
+tests/
+
+# Documentation build
+docs/_build/
+site/
+
+# Coverage reports
+.coverage
+htmlcov/
+.tox/
+.pytest_cache/
+
+# Distribution
+dist/
+build/
+*.egg-info/
+
+# Virtual environments
+venv/
+env/
+.venv/
+ENV/
+
+# PyTorch model files (can be very large)
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+
+# Hugging Face cache
+.cache/huggingface/
+transformers_cache/
+
+# TTS model cache
+.tts_cache/
