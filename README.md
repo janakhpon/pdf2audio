@@ -20,18 +20,20 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 git clone git@github.com:janakhpon/pdf2audio.git
 cd pdf2audio
 
-uv venv --python=3.11 && source .venv/bin/activate 
+uv venv --python=3.11 && source .venv/bin/activate
 uv pip install -r requirements.txt
 
-python voice_test_coqui.py 
-python voice_test_google.py 
+python voice_test_coqui.py
+python voice_test_google.py
 
 python pdf2audio_google.py books/gold-rush-adventures.pdf  # gtts -> we can not change voice unless we have gtts api key
-python pdf2audio_coqui.py books/gold-rush-adventures.pdf 
+python pdf2audio_coqui.py books/gold-rush-adventures.pdf
+python pdf2audio_llm.py books/gold-rush-adventures.pdf  # cotent parsing and enhancement with GPT-2 Medium
 ```
-
 
 ## References
 
 - [TTS](https://github.com/coqui-ai/TTS)
 - [gTTS](https://pypi.org/project/gTTS/)
+- [Transformers](https://huggingface.co/docs/transformers/)
+- [GPT-2 model on Hugging Face](https://huggingface.co/openai-community/gpt2-medium/tree/main)
