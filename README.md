@@ -4,8 +4,8 @@ A simple, open-source tool that converts PDFs into audiobooks for free.
 
 ## Prerequisites
 
-- Python 3.11
-- `uv` package manager (recommended) or `pip`
+- Python 3.11+
+- `uv` package manager
 
 ### Installing uv
 
@@ -20,16 +20,21 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 git clone git@github.com:janakhpon/pdf2audio.git
 cd pdf2audio
 
-uv venv --python=3.11 && source .venv/bin/activate
-uv pip install -r requirements.txt
+# uv venv --python=3.11
 
-python voice_test_coqui.py
-python voice_test_google.py
+# Create virtual environment and install dependencies
+uv sync
 
-python pdf2audio_google.py books/gold-rush-adventures.pdf  # gtts -> we can not change voice unless we have gtts api key
-python pdf2audio_coqui.py books/gold-rush-adventures.pdf
-python pdf2audio_llm.py books/gold-rush-adventures.pdf  # cotent parsing and enhancement with GPT-2 Medium
-python pdf2audio_summarizer.py book.pdf # medium summary is default, provide --long or --short
+
+# Test voice synthesis
+uv run python voice_test_coqui.py
+uv run python voice_test_google.py
+
+# Convert PDFs to audio
+uv run python pdf2audio_google.py books/gold-rush-adventures.pdf  # gtts -> we can not change voice unless we have gtts api key
+uv run python pdf2audio_coqui.py books/gold-rush-adventures.pdf
+uv run python pdf2audio_llm.py books/gold-rush-adventures.pdf  # content parsing and enhancement with GPT-2 Medium
+uv run python pdf2audio_summarizer.py book.pdf # medium summary is default, provide --long or --short
 ```
 
 ## References
