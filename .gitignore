@@ -212,19 +212,25 @@ __marimo__/
 # Model cache directory (contains downloaded ML models)
 models/
 models--*/
+assets/models/*
 
-# Audio output files
+# Explicitly ignore all books EXCEPT gold-rush
+books/*
+!books/gold-rush-adventures.pdf
+
+# Explicitly ignore all generated output EXCEPT gold-rush
+output/audio/*
+!output/audio/gold-rush-adventures/
+!output/audio/gold-rush-adventures/*
+output/transcripts/*
+!output/transcripts/gold-rush-adventures/
+!output/transcripts/gold-rush-adventures/*
+
+# Deprecated paths
 audio/
-*.mp3
-*.wav
-*.flac
-*.m4a
-*.ogg
-
-books/
+cleaned_texts_llm/
 
 # Processed text files
-cleaned_texts_llm/
 *.txt
 *.json
 

@@ -1,0 +1,35 @@
+# PDF to Audio Configuration
+
+# Input settings
+source:
+  # Path can be a single file, a directory, or an array of specific files.
+  # Examples:
+  # path: "books/"
+  # path: "books/gold-rush.pdf"
+  # path:
+  #   - "books/part1.pdf"
+  #   - "books/part2.pdf"
+  path: "books/gold-rush-adventures.pdf"
+  chunk_size: 5           # Number of pages to process together into a single audio file
+
+# Transcription and Smart Editor settings
+editor:
+  enabled: true          # Set to false to bypass transcription and Ollama completely
+  model: "qwen2.5"       # Name of the local Ollama model to use for the Smart Editor
+  mode: "full"            # Options: "short" (summarize), "medium" (summarize), "full" (clean formatting only)
+  preserve_context: true  # Dynamically passes the summary of the previous chunk into the next chunk to guarantee coherent narrative flow across 1,000+ page books
+  url: "http://localhost:11434"
+
+# Audio Generation settings
+audio:
+  model_path: "assets/models/kokoro-v1.0.onnx"
+  voices_path: "assets/models/voices-v1.0.bin"
+  voice: "af_heart"       # Voice profile (e.g. af_alloy, am_adam, af_heart)
+  speed: 1.0              # Playback speed (e.g. 1.0, 1.2, 1.5)
+  format: "mp3"           # Output audio format (options: wav, mp3, m4a)
+
+# Output settings
+output:
+  audio_dir: "output/audio"
+  transcripts_dir: "output/transcripts"
+  save_transcripts: true  # Whether to save the text files alongside the generated audio
