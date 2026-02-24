@@ -1,46 +1,98 @@
-# PDF to Audio Converter
+# PDF to AudioBook
 
-A simple, open-source tool that converts PDFs into audiobooks for free.
+An offline tool that converts PDFs into realistic audiobooks.
+Powered by Kokoro-ONNX for lightweight text-to-speech, with optional Ollama integration for transcript editing.
+
+## Features
+
+- **Massive PDF Support**: Processes large PDFs efficiently without memory issues. Memory usage stays constant regardless of file size.
+- **Smart Editor**: Uses local LLMs (via Ollama) to clean up raw PDF text, removing awkward formatting before generating audio.
 
 ## Prerequisites
 
 - Python 3.11+
 - `uv` package manager
 
-### Installing uv
-
-```bash
-# Install using curl
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-## Setup
+## Installation
 
 ```bash
 git clone git@github.com:janakhpon/pdf2audio.git
 cd pdf2audio
-
-# uv venv --python=3.11
-
-# Create virtual environment and install dependencies
 uv sync
-
-
-# Test voice synthesis
-uv run python voice_test_coqui.py
-uv run python voice_test_google.py
-
-# Convert PDFs to audio
-uv run python pdf2audio_google.py books/gold-rush-adventures.pdf  # gtts -> we can not change voice unless we have gtts api key
-uv run python pdf2audio_coqui.py books/gold-rush-adventures.pdf
-uv run python pdf2audio_llm.py books/gold-rush-adventures.pdf  # content parsing and enhancement with GPT-2 Medium
-uv run python pdf2audio_summarizer.py book.pdf # medium summary is default, provide --long or --short
 ```
 
-## References
+### Download Audio Models
 
-- [TTS](https://github.com/coqui-ai/TTS)
-- [gTTS](https://pypi.org/project/gTTS/)
-- [Transformers](https://huggingface.co/docs/transformers/)
-- [GPT-2 model on Hugging Face](https://huggingface.co/openai-community/gpt2-medium/tree/main)
-- [Facebook Bart](https://huggingface.co/facebook/bart-large-cnn)
+The text-to-speech engine requires the Kokoro models (~80MB).
+
+```bash
+mkdir -p assets/models
+curl -sL https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx -o assets/models/kokoro-v1.0.onnx
+curl -sL https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin -o assets/models/voices-v1.0.bin
+```
+
+### Optional: Ollama Setup
+
+To use the Smart Editor for text cleanup, install [Ollama](https://ollama.com).
+
+Recommended models:
+
+- `llama3.2` (Default) - Fast and accurate for formatting text.
+- `qwen2.5` - Highly capable for strict formatting instructions.
+- `gemma2` / `mistral` - Great for summarizing text.
+
+To download a model, run:
+
+```bash
+ollama run llama3.2
+```
+
+## Usage
+
+### Preview Voices
+
+Before generating an entire audiobook, you can test how a voice sounds.
+
+1. Check the [Voices](docs/voices.md) list.
+2. Run the preview script with your chosen voice:
+
+```bash
+uv run python -m src.preview af_bella
+```
+
+This generates a short audio sample in `output/audio/_preview_af_bella.mp3`.
+
+### Full Processing
+
+All settings are managed in `config.yaml`.
+
+1. Choose your PDF file or directory in `config.yaml`.
+2. Select your voice and language.
+3. Run the application:
+
+```bash
+uv run python -m src
+```
+
+Output audio and transcripts are saved to the `output/` directory.
+
+### Merge Audio Chunks
+
+Because books are split into chunks for processing, you can merge all generated chunks into a single audiobook file:
+
+```bash
+uv run python -m src.merge output/audio/BOOK_NAME
+```
+
+Example:
+
+```bash
+uv run python -m src.merge output/audio/gold-rush-adventures
+```
+
+This merges all the chunks and saves a single `{BOOK_NAME}_full.mp3` file.
+
+## Documentation
+
+- **[Architecture](docs/architecture.md)**: System design and code structure.
+- **[Voices](docs/voices.md)**: List of supported languages and voices.
