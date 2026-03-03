@@ -1,19 +1,19 @@
-# PDF to AudioBook
+# PDF2Audio
 
-An offline tool that converts PDFs into realistic audiobooks.
-Powered by Kokoro-ONNX for lightweight text-to-speech, with optional Ollama integration for transcript editing.
+An offline tool designed to convert large PDF files into realistic audiobooks with stable memory footprint. It utilizes Kokoro-ONNX for text-to-speech synthesis and offers optional Ollama integration for transcript processing.
 
-## Features
+## Architecture
 
-- **Massive PDF Support**: Processes large PDFs efficiently without memory issues. Memory usage stays constant regardless of file size.
-- **Smart Editor**: Uses local LLMs (via Ollama) to clean up raw PDF text, removing awkward formatting before generating audio.
+- **Extractor**: Reads PDFs efficiently (`pypdf`), ensuring O(1) memory usage by yielding chunks.
+- **Editor**: Cleans layout artifacts, optionally interfacing with a local `ollama` instance for narrative enhancement.
+- **AudioEngine**: Deploys `kokoro-onnx` for realistic voice synthesis, outputting locally.
+- **Merge**: Utility to concatenate chunks into a single distribution file executing `ffmpeg concat`.
 
-## Prerequisites
+## Setup
 
-- Python 3.11+
-- `uv` package manager
+Requires Python 3.11+ and the `uv` package manager.
 
-## Installation
+1. **Clone & Sync**
 
 ```bash
 git clone git@github.com:janakhpon/pdf2audio.git
@@ -21,9 +21,7 @@ cd pdf2audio
 uv sync
 ```
 
-### Download Audio Models
-
-The text-to-speech engine requires the Kokoro models (~80MB).
+2. **Acquire Audio Models**
 
 ```bash
 mkdir -p assets/models
@@ -31,68 +29,45 @@ curl -sL https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-fil
 curl -sL https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin -o assets/models/voices-v1.0.bin
 ```
 
-### Optional: Ollama Setup
+3. **Install Output Dependencies**
+   Ensure `ffmpeg` is available on your system path for `pydub` format conversions.
 
-To use the Smart Editor for text cleanup, install [Ollama](https://ollama.com).
+#### Optional: Environment Configuration (LLM Editor)
 
-Recommended models:
-
-- `llama3.2` (Default) - Fast and accurate for formatting text.
-- `qwen2.5` - Highly capable for strict formatting instructions.
-- `gemma2` / `mistral` - Great for summarizing text.
-
-To download a model, run:
+If transcript enhancement is desired, verify a local `ollama` service is active on `http://localhost:11434`.
 
 ```bash
 ollama run llama3.2
 ```
 
-## Usage
+## Run Instructions
 
-### Preview Voices
+Configuration is strictly managed via `config.yaml`. Define input source (`source.path`) and target audio directory (`output.audio_dir`).
 
-Before generating an entire audiobook, you can test how a voice sounds.
-
-1. Check the [Voices](docs/voices.md) list.
-2. Run the preview script with your chosen voice:
+**Preview Synthesis Voice:**
 
 ```bash
-uv run python -m src.preview af_bella
+uv run python -m src.preview
 ```
 
-This generates a short audio sample in `output/audio/_preview_af_bella.mp3`.
-
-### Full Processing
-
-All settings are managed in `config.yaml`.
-
-1. Choose your PDF file or directory in `config.yaml`.
-2. Select your voice and language.
-3. Run the application:
+**Execute Processing Pipeline:**
 
 ```bash
 uv run python -m src
 ```
 
-Output audio and transcripts are saved to the `output/` directory.
-
-### Merge Audio Chunks
-
-Because books are split into chunks for processing, you can merge all generated chunks into a single audiobook file:
+**Merge Final Output:**
 
 ```bash
-uv run python -m src.merge output/audio/BOOK_NAME
+uv run python -m src.merge
 ```
 
-Example:
+## Development Workflow
 
-```bash
-uv run python -m src.merge output/audio/gold-rush-adventures
-```
+- Modify configuration via `config.yaml`.
+- All TTS processing is deterministic and output formats are dictated exclusively by the configuration schema.
+- System operates statelessly; processed chunks are cached in `output/` and skipped securely during subsequent executions.
 
-This merges all the chunks and saves a single `{BOOK_NAME}_full.mp3` file.
+## Deployment Overview
 
-## Documentation
-
-- **[Architecture](docs/architecture.md)**: System design and code structure.
-- **[Voices](docs/voices.md)**: List of supported languages and voices.
+Designed strictly for local daemon execution or containerized workloads on hardware with adequate CPU/RAM limits for TTS loading logic. Due to dependencies on ONNX binaries and local generation, isolated deployment topologies are recommended.
