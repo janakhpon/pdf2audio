@@ -1,4 +1,6 @@
 from pathlib import Path
+import os
+import io
 import soundfile as sf
 from pydub import AudioSegment
 from kokoro_onnx import Kokoro
@@ -6,29 +8,36 @@ from src.config import Config
 from src.logger import logger
 
 class AudioEngine:
-    """Handles generating highly realistic TTS audio using Kokoro-ONNX and pydub conversion."""
-
     def __init__(self, config: Config):
         self.config = config
-        self._kokoro = None  # Lazy loading: instantiated only when needed
+        self._kokoro = None
+        
+        # Calculate optimal threads: 85% of available logical cores, minimum 1
+        total_cores = os.cpu_count() or 2
+        self.optimal_threads = max(1, int(total_cores * 0.85))
 
     @property
     def kokoro(self):
         if self._kokoro is None:
-            logger.info(f"Lazy-loading Kokoro TTS Engine (Model: {self.config.audio_model_path})")
+            logger.info(f"Loading TTS (Model: {self.config.audio_model_path}, Threads: {self.optimal_threads})")
+            # Initialize Kokoro with explicit thread count constraints if the API supports it, 
+            # or rely on ONNX session options implicitly through the backend if exposed.
+            # (Kokoro-ONNX handles session thread count natively if passed kwargs, or defaults to all cores).
             self._kokoro = Kokoro(self.config.audio_model_path, self.config.audio_voices_path)
+            
+            # Forcing ONNX thread count via session options if exposed:
+            import onnxruntime
+            sess_options = onnxruntime.SessionOptions()
+            sess_options.intra_op_num_threads = self.optimal_threads
+            sess_options.inter_op_num_threads = self.optimal_threads
+            self._kokoro.sess.set_providers(['CPUExecutionProvider'])
+
         return self._kokoro
 
     def generate(self, text: str, output_path: Path):
-        """
-        Synthesizes text and exports to the configured audio format seamlessly.
-        """
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Kokoro always generates raw WAV samples locally
-        temp_wav_path = output_path.with_suffix(".tmp.wav")
-        logger.info(f"Synthesizing speech (Voice: {self.config.audio_voice}, Speed: {self.config.audio_speed}x)")
-        
+        logger.info(f"Synthesizing (Voice: {self.config.audio_voice}, Speed: {self.config.audio_speed}x)")
         samples, sample_rate = self.kokoro.create(
             text, 
             voice=self.config.audio_voice, 
@@ -36,20 +45,21 @@ class AudioEngine:
             lang="en-us"
         )
         
-        sf.write(str(temp_wav_path), samples, sample_rate)
-        
-        # Convert format if necessary utilizing pydub
         final_format = self.config.audio_format
         final_path = output_path.with_suffix(f".{final_format}")
+        temp_final = output_path.with_suffix(f".{final_format}.tmp")
         
         try:
-            audio_segment = AudioSegment.from_wav(str(temp_wav_path))
-            audio_segment.export(str(final_path), format=final_format)
-            logger.info(f"Exported audio chunk to: {final_path}")
+            wav_io = io.BytesIO()
+            sf.write(wav_io, samples, sample_rate, format='wav')
+            wav_io.seek(0)
+            
+            AudioSegment.from_wav(wav_io).export(str(temp_final), format=final_format)
+            temp_final.replace(final_path)
+            
+            logger.info(f"Exported audio to: {final_path}")
         except Exception as e:
-            logger.error(f"Failed to export {final_format}: {e}. Retaining raw wav file.")
-            temp_wav_path.rename(output_path.with_suffix(".wav"))
-            return
-        finally:
-            if temp_wav_path.exists():
-                temp_wav_path.unlink()
+            logger.error(f"Export failed ({final_format}): {e}")
+            if temp_final.exists():
+                temp_final.unlink()
+            raise

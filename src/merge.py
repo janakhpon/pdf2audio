@@ -1,52 +1,100 @@
+import sys
 import argparse
 import os
 import glob
-from pydub import AudioSegment
+import subprocess
+from pathlib import Path
 from src.logger import logger
+from src.config import load_config
 
 def merge_audio(directory: str, output_format: str = "mp3"):
     if not os.path.isdir(directory):
         logger.error(f"Directory not found: {directory}")
         return
 
-    # Find all audio chunks of the specified format
     pattern = os.path.join(directory, f"chunk_*.{output_format}")
     files = sorted(glob.glob(pattern))
 
     if not files:
-        logger.error(f"No chunk files found in {directory}")
+        logger.error(f"No files found in {directory}")
         return
 
-    logger.info(f"Found {len(files)} files to merge in {directory}")
+    logger.info(f"Merging {len(files)} files in {directory} using ffmpeg")
 
-    combined = AudioSegment.empty()
-    for f in files:
-        logger.info(f"Adding {os.path.basename(f)} ...")
-        # Attempt to infer format from extension or default to the requested output_format
-        audio_ext = f.split(".")[-1]
-        try:
-            chunk = AudioSegment.from_file(f, format=audio_ext)
-            combined += chunk
-        except Exception as e:
-            logger.error(f"Failed to load {f}: {e}")
-            return
-
-    # Output file name: book_name.mp3
     book_name = os.path.basename(os.path.normpath(directory))
     parent_dir = os.path.dirname(os.path.normpath(directory))
     output_filename = os.path.join(parent_dir, f"{book_name}_full.{output_format}")
 
-    logger.info(f"Exporting merged audio to {output_filename}...")
-    combined.export(output_filename, format=output_format)
-    logger.info(f"Export complete: {output_filename}")
+    list_path = os.path.join(directory, "concat_list.txt")
+    try:
+        with open(list_path, "w", encoding="utf-8") as f:
+            for filepath in files:
+                safe_path = os.path.abspath(filepath).replace("'", "'\\''")
+                f.write(f"file '{safe_path}'\n")
 
+        logger.info(f"Exporting to {output_filename}")
+        
+        command = [
+            "ffmpeg", "-y", "-f", "concat", "-safe", "0", 
+            "-i", list_path, "-c", "copy", output_filename
+        ]
+        
+        import signal
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        
+        def handle_sigterm(signum, frame):
+            logger.warning("Received termination sequence. Killing ffmpeg subprocess.")
+            process.terminate()
+            process.wait()
+            sys.exit(1)
+            
+        signal.signal(signal.SIGTERM, handle_sigterm)
+        signal.signal(signal.SIGINT, handle_sigterm)
+        
+        stdout, stderr = process.communicate()
+        
+        if process.returncode != 0:
+            logger.error(f"ffmpeg merge failed: {stderr}")
+            return
+            
+        logger.info("Export complete.")
+    except Exception as e:
+        logger.error(f"Merge error: {e}")
+    finally:
+        if os.path.exists(list_path):
+            os.remove(list_path)
 def main():
-    parser = argparse.ArgumentParser(description="Merge audio chunks into a single audiobook file.")
-    parser.add_argument("directory", help="The directory containing the audio chunks (e.g., output/audio/gold-rush-adventures)")
-    parser.add_argument("--format", default="mp3", help="Output format (mp3, wav, m4a). Default is mp3.")
+    try:
+        config = load_config("config.yaml")
+    except Exception as e:
+        logger.error(f"Config error: {e}")
+        sys.exit(1)
 
-    args = parser.parse_args()
-    merge_audio(args.directory, args.format)
+    source_input = config.source_path
+    source_paths = source_input if isinstance(source_input, list) else [source_input]
+
+    pdf_files = []
+    for sp in source_paths:
+        if not sp.exists():
+            continue
+        if sp.is_dir():
+            pdf_files.extend(list(sp.glob("*.pdf")))
+        elif sp.is_file() and sp.suffix.lower() == ".pdf":
+            pdf_files.append(sp)
+
+    if not pdf_files:
+        logger.error("No target PDFs found in config to derive merge paths.")
+        sys.exit(1)
+
+    merged_count = 0
+    for pdf_file in pdf_files:
+        book_audio_dir = config.out_audio_dir / pdf_file.stem
+        if book_audio_dir.exists() and book_audio_dir.is_dir():
+            merge_audio(str(book_audio_dir), config.audio_format)
+            merged_count += 1
+            
+    if merged_count == 0:
+        logger.warning("No generated output directories found to merge.")
 
 if __name__ == "__main__":
     main()

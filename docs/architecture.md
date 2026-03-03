@@ -17,13 +17,13 @@ The `pdf2audio` codebase uses a modular, configuration-driven architecture desig
 
 4. **Speech Synthesis (`src/audio.py`)**:
    - Uses `kokoro-onnx` to generate realistic speech from the processed text.
-   - Exports the final audio using `pydub`.
+   - Exports the final audio using a memory-optimized `io.BytesIO` bridge to `pydub`.
    - Models are loaded only when needed to optimize startup time.
 
 ## Audio Merger (`src/merge.py`)
 
 - Reads all generated audio chunks (`output/audio/X/chunk_*.mp3/wav`).
-- Utilizes `pydub` to securely append them into a seamless `{book_name}_full.mp3` file.
+- Utilizes `ffmpeg concat` demuxer to flawlessly multiplex chunks into a seamless `{book_name}_full.mp3` file, avoiding memory saturation.
 
 ## Logging
 
