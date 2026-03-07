@@ -1,5 +1,8 @@
 import json
 import urllib.request
+import urllib.error
+import re
+import time
 from typing import Optional
 from src.config import Config
 from src.logger import logger
@@ -20,7 +23,6 @@ class SmartEditor:
         if len(text) <= max_chars:
             return text
         sliced = text[-max_chars:]
-        import re
         match = re.search(r'[\s.\n]', sliced)
         if match:
             return sliced[match.end():].strip()
@@ -72,7 +74,10 @@ class SmartEditor:
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(self.url_generate, data=data, headers={"Content-Type": "application/json"})
 
-        for attempt in range(2):
+        max_retries = 3
+        base_delay = 2.0
+        
+        for attempt in range(max_retries):
             try:
                 with urllib.request.urlopen(req, timeout=self.timeout) as response:
                     result = json.loads(response.read().decode("utf-8"))
@@ -83,9 +88,14 @@ class SmartEditor:
                             self._previous_context = polished if self.mode in ("short", "medium") else self._safe_slice_context(polished)
                         return polished
             except Exception as e:
-                logger.warning(f"Ollama error (Attempt {attempt + 1}/2): {e}")
+                if attempt == max_retries - 1:
+                    logger.error(f"Ollama polishing failed after {max_retries} attempts.")
+                    break
+                    
+                delay = base_delay * (2 ** attempt)
+                logger.warning(f"Ollama error (Attempt {attempt + 1}/{max_retries}): {e}. Retrying in {delay}s...")
+                time.sleep(delay)
         
-        logger.error("Ollama polishing failed.")
         raise RuntimeError("Critical LLM Failure: Unable to process transcript chunk via Ollama.")
 
     def _build_prompt(self) -> str:

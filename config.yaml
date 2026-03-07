@@ -9,7 +9,7 @@ source:
   # path:
   #   - "books/part1.pdf"
   #   - "books/part2.pdf"
-  path: "books/gold-rush-adventures.pdf"
+  path: "/Users/zinmin/Downloads/system-design-interview-bytebytego"
   chunk_size: 6           # Number of pages to process together into a single audio file
 
 # Transcription and Smart Editor settings
