@@ -2,21 +2,29 @@ import sys
 import argparse
 import os
 import glob
+import re
 import subprocess
 from pathlib import Path
 from src.logger import logger
 from src.config import load_config
 
-def merge_audio(directory: str, output_format: str = "mp3"):
+def merge_audio(directory: str, output_format: str = "mp3", valid_files: list[str] = None):
     if not os.path.isdir(directory):
         logger.error(f"Directory not found: {directory}")
         return
 
-    pattern = os.path.join(directory, f"chunk_*.{output_format}")
-    files = sorted(glob.glob(pattern))
+    if valid_files is not None:
+        files = valid_files # Already strict and chronologically ordered by the DB
+    else:
+        # Fallback to legacy globbing if strict list not provided (e.g standalone module run)
+        pattern = os.path.join(directory, f"chunk_*.wav")
+        def natural_sort_key(s):
+            match = re.search(r'\d+', os.path.basename(s))
+            return int(match.group()) if match else 0
+        files = sorted(glob.glob(pattern), key=natural_sort_key)
 
     if not files:
-        logger.error(f"No files found in {directory}")
+        logger.error(f"No files safely validated for merge in {directory}")
         return
 
     logger.info(f"Merging {len(files)} files in {directory} using ffmpeg")
@@ -36,25 +44,27 @@ def merge_audio(directory: str, output_format: str = "mp3"):
         
         command = [
             "ffmpeg", "-y", "-f", "concat", "-safe", "0", 
-            "-i", list_path, "-c", "copy", output_filename
+            "-i", list_path
         ]
         
-        import signal
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        
-        def handle_sigterm(signum, frame):
-            logger.warning("Received termination sequence. Killing ffmpeg subprocess.")
-            process.terminate()
-            process.wait()
-            sys.exit(1)
+        if output_format.lower() == "mp3":
+            command.extend(["-c:a", "libmp3lame", "-q:a", "2"])
+        elif output_format.lower() == "m4a":
+            command.extend(["-c:a", "aac", "-b:a", "128k"])
             
-        signal.signal(signal.SIGTERM, handle_sigterm)
-        signal.signal(signal.SIGINT, handle_sigterm)
+        command.append(output_filename)
         
-        stdout, stderr = process.communicate()
+        # Safe subprocess execution with timeout and child handling
+        result = subprocess.run(
+            command, 
+            capture_output=True, 
+            text=True, 
+            timeout=7200,  # Failsafe abort after 2 hours
+            check=False # Check manually below
+        )
         
-        if process.returncode != 0:
-            logger.error(f"ffmpeg merge failed: {stderr}")
+        if result.returncode != 0:
+            logger.error(f"ffmpeg merge failed: {result.stderr}")
             return
             
         logger.info("Export complete.")

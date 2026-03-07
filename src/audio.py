@@ -2,7 +2,6 @@ from pathlib import Path
 import os
 import io
 import soundfile as sf
-from pydub import AudioSegment
 from kokoro_onnx import Kokoro
 from src.config import Config
 from src.logger import logger
@@ -34,27 +33,113 @@ class AudioEngine:
 
         return self._kokoro
 
+    def _chunk_text(self, text: str, max_chars: int = 200) -> list[str]:
+        import re
+        chunks = []
+        paragraphs = text.split('\n')
+        for p in paragraphs:
+            p = p.strip()
+            if not p:
+                continue
+            if len(p) <= max_chars:
+                chunks.append(p)
+            else:
+                # Split by sentences including CJK punctuation
+                # Using a regex that captures the punctuation so it's not lost
+                sentences = re.split(r'([.!?。！？]+)', p)
+                
+                # Reconstruct sentences with their punctuation
+                combined_sentences = []
+                for i in range(0, len(sentences)-1, 2):
+                    combined_sentences.append((sentences[i] + sentences[i+1]).strip())
+                if len(sentences) % 2 != 0 and sentences[-1].strip():
+                    combined_sentences.append(sentences[-1].strip())
+                    
+                current_chunk = ""
+                for s in combined_sentences:
+                    if not s: continue
+                    
+                    if len(current_chunk) + len(s) + (1 if current_chunk else 0) <= max_chars:
+                        current_chunk += (" " + s if current_chunk else s)
+                    else:
+                        if current_chunk:
+                            chunks.append(current_chunk)
+                        
+                        if len(s) > max_chars:
+                            # Sentence is too long, we must split it
+                            words = s.split(' ')
+                            temp_chunk = ""
+                            for w in words:
+                                if len(temp_chunk) + len(w) + (1 if temp_chunk else 0) <= max_chars:
+                                    temp_chunk += (" " + w if temp_chunk else w)
+                                else:
+                                    if temp_chunk:
+                                        chunks.append(temp_chunk)
+                                    
+                                    # If a SINGLE word (or no-space CJK string) is still > max_chars
+                                    if len(w) > max_chars:
+                                        # Hard split by characters
+                                        for i in range(0, len(w), max_chars):
+                                            chunks.append(w[i:i+max_chars])
+                                        temp_chunk = "" # Handled entirety of w
+                                    else:
+                                        temp_chunk = w
+                            if temp_chunk:
+                                chunks.append(temp_chunk)
+                            current_chunk = ""
+                        else:
+                            current_chunk = s
+                
+                if current_chunk:
+                    chunks.append(current_chunk)
+        return chunks
+
     def generate(self, text: str, output_path: Path):
+        import numpy as np
+        if not text.strip():
+            logger.warning("Empty text provided for audio generation.")
+            return
+
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
         logger.info(f"Synthesizing (Voice: {self.config.audio_voice}, Speed: {self.config.audio_speed}x)")
-        samples, sample_rate = self.kokoro.create(
-            text, 
-            voice=self.config.audio_voice, 
-            speed=self.config.audio_speed, 
-            lang="en-us"
-        )
         
-        final_format = self.config.audio_format
+        text_chunks = self._chunk_text(text, max_chars=200)
+        all_samples = []
+        sample_rate = 24000
+        
+        for chunk in text_chunks:
+            chunk = chunk.strip()
+            if not chunk: continue
+            
+            try:
+                samples, sr = self.kokoro.create(
+                    chunk, 
+                    voice=self.config.audio_voice, 
+                    speed=self.config.audio_speed, 
+                    lang="en-us"
+                )
+                sample_rate = sr
+                all_samples.append(samples)
+            except ValueError as e:
+                if "need at least one array to concatenate" in str(e):
+                    logger.debug(f"Skipped unpronounceable chunk: {chunk[:30]}...")
+                else:
+                    raise e
+            except Exception as e:
+                logger.warning(f"Failed to generate audio for chunk '{chunk[:30]}...': {e}")
+            
+        if all_samples:
+            samples = np.concatenate(all_samples)
+        else:
+            samples = np.array([], dtype=np.float32)
+        
+        final_format = "wav" # Intermediate chunks must always be wav
         final_path = output_path.with_suffix(f".{final_format}")
         temp_final = output_path.with_suffix(f".{final_format}.tmp")
         
         try:
-            wav_io = io.BytesIO()
-            sf.write(wav_io, samples, sample_rate, format='wav')
-            wav_io.seek(0)
-            
-            AudioSegment.from_wav(wav_io).export(str(temp_final), format=final_format)
+            sf.write(str(temp_final), samples, sample_rate, format='wav')
             temp_final.replace(final_path)
             
             logger.info(f"Exported audio to: {final_path}")
