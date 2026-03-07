@@ -1,19 +1,31 @@
-# PDF2Audio
+# pdf2audio
 
-An offline tool designed to convert large PDF files into realistic audiobooks with stable memory footprint. It utilizes Kokoro-ONNX for text-to-speech synthesis and offers optional Ollama integration for transcript processing.
+Convert digital documents into structured audiobooks locally and deterministically.
 
-## Architecture
+## Supported Formats
 
-- **Extractor**: Reads PDFs efficiently (`pypdf`), ensuring O(1) memory usage by yielding chunks.
-- **Editor**: Cleans layout artifacts, optionally interfacing with a local `ollama` instance for narrative enhancement.
-- **AudioEngine**: Deploys `kokoro-onnx` for realistic voice synthesis, outputting locally.
-- **Merge**: Utility to concatenate chunks into a single distribution file executing `ffmpeg concat`.
+- **PDF**: Uses AI layout analysis (`docling`) to structurally understand multi-column text, headers, and tables instead of blindly scraping characters.
+- **EPUB**: Natively parses chapters sequentially.
+- **HTML Directories**: Sorts and extracts content from a folder of HTML files, intelligently decomposing navigation and style tags to isolate reading material.
 
-## Setup
+## Architecture Highlights
 
-Requires Python 3.11+ and the `uv` package manager.
+- **100% Offline**: Local TTS generation utilizing `kokoro-onnx`.
+- **Fault-Tolerant State**: SQLite tracks chunk extraction progress natively. Safe to kill, configure, and resume operations at any time without data loss.
+- **Constant Memory**: Pipeline utilizes true Python generators to process infinite-scale books with near-zero idle RAM overhead.
+- **LLM Polisher (Optional)**: Can automatically offload chunks to a local Ollama model to refine NLP syntax or patch raw OCR artifacts _before_ TTS generation.
 
-1. **Clone & Sync**
+## Quick Start Guide
+
+### Prerequisites
+
+- Python 3.11+
+- `uv` package manager
+- `ffmpeg` installed on the host OS
+
+### Setup
+
+1. Clone the repository and install dependencies:
 
 ```bash
 git clone git@github.com:janakhpon/pdf2audio.git
@@ -21,7 +33,7 @@ cd pdf2audio
 uv sync
 ```
 
-2. **Acquire Audio Models**
+2. Acquire the necessary ONNX voice models:
 
 ```bash
 mkdir -p assets/models
@@ -29,45 +41,30 @@ curl -sL https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-fil
 curl -sL https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin -o assets/models/voices-v1.0.bin
 ```
 
-3. **Install Output Dependencies**
-   Ensure `ffmpeg` is available on your system path for `pydub` format conversions.
+## Usage
 
-#### Optional: Environment Configuration (LLM Editor)
+Execution boundaries are strictly managed via `config.yaml`.
 
-If transcript enhancement is desired, verify a local `ollama` service is active on `http://localhost:11434`.
+1. Modify `config.yaml` to set your `source.path` (accepts distinct files, lists of files, or entire directories).
+2. Adjust `audio` schemas to map target voices or playback speed.
+3. (Optional) Toggle the `editor` block to utilize LLM NLP polishing via a local Ollama instance (ensure `ollama run [model]` is active).
 
-```bash
-ollama run llama3.2
-```
+### Running the Pipeline
 
-## Run Instructions
-
-Configuration is strictly managed via `config.yaml`. Define input source (`source.path`) and target audio directory (`output.audio_dir`).
-
-**Preview Synthesis Voice:**
+Preview the TTS engine's configured voice profile:
 
 ```bash
 uv run python -m src.preview
 ```
 
-**Execute Processing Pipeline:**
+Execute the primary extraction and synthesis daemon:
 
 ```bash
 uv run python -m src
 ```
 
-**Merge Final Output:**
+## Operational Notes
 
-```bash
-uv run python -m src.merge
-```
-
-## Development Workflow
-
-- Modify configuration via `config.yaml`.
-- All TTS processing is deterministic and output formats are dictated exclusively by the configuration schema.
-- System operates statelessly; processed chunks are cached in `output/` and skipped securely during subsequent executions.
-
-## Deployment Overview
-
-Designed strictly for local daemon execution or containerized workloads on hardware with adequate CPU/RAM limits for TTS loading logic. Due to dependencies on ONNX binaries and local generation, isolated deployment topologies are recommended.
+- **Disk Validation**: The system actively monitors disk capacity mid-generation. Ensure the host drive maintains at least 500MB of free space or the daemon will gracefully halt extraction to protect the OS.
+- **Concurrency**: Text generation (LLM block) and Audio generation (ONNX Engine) are decoupled async workers. CPU loads will scale dynamically to match threaded targets.
+- **Safe-Merge**: Synthesized audio chunks are concatenated automatically at the end of the pipeline. If a run crashes natively, execute `uv run python -m src.merge` anytime to compile all currently successful `.wav` chunks deterministically.

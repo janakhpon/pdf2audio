@@ -1,7 +1,11 @@
-from pathlib import Path
 import os
 import io
+import re
+import numpy as np
+from pathlib import Path
 import soundfile as sf
+import onnxruntime
+import nltk
 from kokoro_onnx import Kokoro
 from src.config import Config
 from src.logger import logger
@@ -25,16 +29,21 @@ class AudioEngine:
             self._kokoro = Kokoro(self.config.audio_model_path, self.config.audio_voices_path)
             
             # Forcing ONNX thread count via session options if exposed:
-            import onnxruntime
             sess_options = onnxruntime.SessionOptions()
             sess_options.intra_op_num_threads = self.optimal_threads
             sess_options.inter_op_num_threads = self.optimal_threads
             self._kokoro.sess.set_providers(['CPUExecutionProvider'])
+            
+            # Ensure nltk punkt model is available
+            try:
+                nltk.data.find('tokenizers/punkt_tab')
+            except LookupError:
+                logger.info("Downloading NLTK punkt tokenization data...")
+                nltk.download('punkt_tab', quiet=True)
 
         return self._kokoro
 
     def _chunk_text(self, text: str, max_chars: int = 200) -> list[str]:
-        import re
         chunks = []
         paragraphs = text.split('\n')
         for p in paragraphs:
@@ -44,19 +53,11 @@ class AudioEngine:
             if len(p) <= max_chars:
                 chunks.append(p)
             else:
-                # Split by sentences including CJK punctuation
-                # Using a regex that captures the punctuation so it's not lost
-                sentences = re.split(r'([.!?。！？]+)', p)
-                
-                # Reconstruct sentences with their punctuation
-                combined_sentences = []
-                for i in range(0, len(sentences)-1, 2):
-                    combined_sentences.append((sentences[i] + sentences[i+1]).strip())
-                if len(sentences) % 2 != 0 and sentences[-1].strip():
-                    combined_sentences.append(sentences[-1].strip())
-                    
+                sentences = nltk.tokenize.sent_tokenize(p)
                 current_chunk = ""
-                for s in combined_sentences:
+                
+                for s in sentences:
+                    s = s.strip()
                     if not s: continue
                     
                     if len(current_chunk) + len(s) + (1 if current_chunk else 0) <= max_chars:
@@ -66,7 +67,7 @@ class AudioEngine:
                             chunks.append(current_chunk)
                         
                         if len(s) > max_chars:
-                            # Sentence is too long, we must split it
+                            # Sentence is inherently too long. Hard split by words.
                             words = s.split(' ')
                             temp_chunk = ""
                             for w in words:
@@ -76,12 +77,10 @@ class AudioEngine:
                                     if temp_chunk:
                                         chunks.append(temp_chunk)
                                     
-                                    # If a SINGLE word (or no-space CJK string) is still > max_chars
                                     if len(w) > max_chars:
-                                        # Hard split by characters
                                         for i in range(0, len(w), max_chars):
                                             chunks.append(w[i:i+max_chars])
-                                        temp_chunk = "" # Handled entirety of w
+                                        temp_chunk = ""
                                     else:
                                         temp_chunk = w
                             if temp_chunk:
@@ -95,7 +94,6 @@ class AudioEngine:
         return chunks
 
     def generate(self, text: str, output_path: Path):
-        import numpy as np
         if not text.strip():
             logger.warning("Empty text provided for audio generation.")
             return
