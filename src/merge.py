@@ -43,7 +43,7 @@ def merge_audio(directory: str, output_format: str = "mp3", valid_files: list[st
         logger.info(f"Exporting to {output_filename}")
         
         command = [
-            "ffmpeg", "-y", "-f", "concat", "-safe", "0", 
+            "ffmpeg", "-y", "-nostdin", "-f", "concat", "-safe", "0", 
             "-i", list_path
         ]
         
@@ -59,7 +59,7 @@ def merge_audio(directory: str, output_format: str = "mp3", valid_files: list[st
             command, 
             capture_output=True, 
             text=True, 
-            timeout=7200,  # Failsafe abort after 2 hours
+            timeout=600,  # Failsafe abort after 10 minutes to prevent process hangs
             check=False # Check manually below
         )
         
@@ -73,6 +73,7 @@ def merge_audio(directory: str, output_format: str = "mp3", valid_files: list[st
     finally:
         if os.path.exists(list_path):
             os.remove(list_path)
+
 def main():
     try:
         config = load_config("config.yaml")
@@ -83,22 +84,26 @@ def main():
     source_input = config.source_path
     source_paths = source_input if isinstance(source_input, list) else [source_input]
 
-    pdf_files = []
+    doc_files = []
     for sp in source_paths:
         if not sp.exists():
             continue
         if sp.is_dir():
-            pdf_files.extend(list(sp.glob("*.pdf")))
-        elif sp.is_file() and sp.suffix.lower() == ".pdf":
-            pdf_files.append(sp)
+            if list(sp.glob("*.html")):
+                doc_files.append(sp)
+            else:
+                doc_files.extend(list(sp.glob("*.pdf")))
+                doc_files.extend(list(sp.glob("*.epub")))
+        elif sp.is_file() and sp.suffix.lower() in [".pdf", ".epub"]:
+            doc_files.append(sp)
 
-    if not pdf_files:
-        logger.error("No target PDFs found in config to derive merge paths.")
+    if not doc_files:
+        logger.error("No target document files found in config to derive merge paths.")
         sys.exit(1)
 
     merged_count = 0
-    for pdf_file in pdf_files:
-        book_audio_dir = config.out_audio_dir / pdf_file.stem
+    for doc_file in doc_files:
+        book_audio_dir = config.out_audio_dir / doc_file.stem
         if book_audio_dir.exists() and book_audio_dir.is_dir():
             merge_audio(str(book_audio_dir), config.audio_format)
             merged_count += 1

@@ -211,24 +211,25 @@ __marimo__/
 
 # Model cache directory (contains downloaded ML models)
 models/
-models--*/
-assets/models/*
+assets/
+assets/models/
 
-# Explicitly ignore all books EXCEPT gold-rush
-books/*
-!books/gold-rush-adventures.pdf
+# Ignore all source books to avoid pushing copyrighted/large PDFs and EPUBs
+books/
 
-# Explicitly ignore all generated output EXCEPT gold-rush
-output/audio/*
-!output/audio/gold-rush-adventures/
-!output/audio/gold-rush-adventures/*
-output/transcripts/*
-!output/transcripts/gold-rush-adventures/
-!output/transcripts/gold-rush-adventures/*
-
-# Deprecated paths
+# Ignore all generated output including audio and transcripts
+output/
 audio/
 cleaned_texts_llm/
+
+# Ignore large media/audio formats
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.ogg
+*.opus
+test_chinese_output.wav
 
 # Processed text files
 *.txt
@@ -239,14 +240,14 @@ cleaned_texts_llm/
 pdf2audio_llm.log
 logs/
 
-# Temporary files
+# Temporary and SQLite DB files
 temp/
 tmp/
 *.tmp
 *.temp
-
-# Large PDF files (optional - uncomment if you don't want to track PDFs)
-# books/*.pdf
+*.db
+*.sqlite
+*.sqlite3
 
 # Cache directories
 .cache/
