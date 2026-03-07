@@ -12,8 +12,19 @@ class SmartEditor:
         self.url_tags = f"{config.editor_url}/api/tags"
         self.enabled = config.editor_enabled
         self.preserve_context = config.editor_preserve_context
+        self.timeout = config.editor_timeout
         self._previous_context: Optional[str] = None
         self._validated = False
+
+    def _safe_slice_context(self, text: str, max_chars: int = 800) -> str:
+        if len(text) <= max_chars:
+            return text
+        sliced = text[-max_chars:]
+        import re
+        match = re.search(r'[\s.\n]', sliced)
+        if match:
+            return sliced[match.end():].strip()
+        return sliced.strip()
         
     def validate_environment(self):
         if not self.enabled:
@@ -63,13 +74,13 @@ class SmartEditor:
 
         for attempt in range(2):
             try:
-                with urllib.request.urlopen(req, timeout=120) as response:
+                with urllib.request.urlopen(req, timeout=self.timeout) as response:
                     result = json.loads(response.read().decode("utf-8"))
                     polished = result.get("response", "").strip()
                     
                     if polished:
                         if self.preserve_context:
-                            self._previous_context = polished if self.mode in ("short", "medium") else polished[-800:]
+                            self._previous_context = polished if self.mode in ("short", "medium") else self._safe_slice_context(polished)
                         return polished
             except Exception as e:
                 logger.warning(f"Ollama error (Attempt {attempt + 1}/2): {e}")
@@ -78,13 +89,16 @@ class SmartEditor:
         raise RuntimeError("Critical LLM Failure: Unable to process transcript chunk via Ollama.")
 
     def _build_prompt(self) -> str:
+        lang_constraint = "CRITICAL: Do NOT translate the text. You MUST respond in the exact same language as the original text."
+        
         if self.mode == "short":
-            return "Summarize the text into a truly concise, punchy version. Return ONLY the polished short summary."
+            return f"Summarize the text into a truly concise, punchy version. {lang_constraint} Return ONLY the polished short summary."
         elif self.mode == "medium":
-            return "Summarize the text into a medium-length version, capturing main points. Return ONLY the polished medium summary."
+            return f"Summarize the text into a medium-length version, capturing main points. {lang_constraint} Return ONLY the polished medium summary."
         else:
             return (
-                "Polish the following text into a clean transcript. Fix awkward line breaks and grammar. "
-                "CRITICAL: Do NOT summarize, cut, or skip ANY sentences. Output the ENTIRE text word for word. "
-                "Return ONLY the polished text."
+                f"Polish the following text into a clean transcript. Fix awkward line breaks and grammar. "
+                f"{lang_constraint} "
+                f"CRITICAL: Do NOT summarize, cut, or skip ANY sentences. Output the ENTIRE text word for word. "
+                f"Return ONLY the polished text."
             )

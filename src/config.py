@@ -1,3 +1,4 @@
+import os
 import yaml
 from pathlib import Path
 from dataclasses import dataclass
@@ -11,6 +12,7 @@ class Config:
     editor_mode: str
     editor_preserve_context: bool
     editor_url: str
+    editor_timeout: int
     audio_model_path: str
     audio_voices_path: str
     audio_voice: str
@@ -36,7 +38,8 @@ def load_config(config_path: str | Path = "config.yaml") -> Config:
         editor_model=data.get("editor", {}).get("model", "llama3.2"),
         editor_mode=data.get("editor", {}).get("mode", "full"),
         editor_preserve_context=data.get("editor", {}).get("preserve_context", True),
-        editor_url=data.get("editor", {}).get("url", "http://localhost:11434"),
+        editor_url=os.getenv("OLLAMA_URL", data.get("editor", {}).get("url", "http://localhost:11434")),
+        editor_timeout=data.get("editor", {}).get("timeout", 600),
         
         audio_model_path=data.get("audio", {}).get("model_path", "assets/models/kokoro-v1.0.onnx"),
         audio_voices_path=data.get("audio", {}).get("voices_path", "assets/models/voices-v1.0.bin"),

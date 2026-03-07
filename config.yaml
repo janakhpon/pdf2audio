@@ -10,7 +10,7 @@ source:
   #   - "books/part1.pdf"
   #   - "books/part2.pdf"
   path: "books/gold-rush-adventures.pdf"
-  chunk_size: 5           # Number of pages to process together into a single audio file
+  chunk_size: 6           # Number of pages to process together into a single audio file
 
 # Transcription and Smart Editor settings
 editor:
@@ -19,6 +19,7 @@ editor:
   mode: "full"            # Options: "short" (summarize), "medium" (summarize), "full" (clean formatting only)
   preserve_context: true  # Dynamically passes the summary of the previous chunk into the next chunk to guarantee coherent narrative flow across 1,000+ page books
   url: "http://localhost:11434"
+  timeout: 600            # Timeout in seconds for LLM generation requests
 
 # Audio Generation settings
 audio:
