@@ -10,7 +10,7 @@ source:
   #   - "books/part1.pdf"
   #   - "books/part2.pdf"
   path: "/Users/zinmin/Downloads/system-design-interview-bytebytego"
-  chunk_size: 6           # Number of pages to process together into a single audio file
+  chunk_size: 6           # HTML: number of files per chunk. PDF: markdown block groups × 10.
 
 # Transcription and Smart Editor settings
 editor:

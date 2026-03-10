@@ -114,13 +114,15 @@ class DocumentExtractor:
             return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s.name)]
             
         html_files = sorted(list(dir_path.glob("*.html")), key=natural_sort_key)
-        
+        logger.info(f"HTML directory: found {len(html_files)} file(s) in sorted order.")
+
         current_chunk = []
         count = 0
         file_idx = 0
         
         def extract_html_text():
-            for html_file in html_files:
+            for i, html_file in enumerate(html_files):
+                logger.debug(f"  Reading [{i + 1}/{len(html_files)}]: {html_file.name}")
                 with open(html_file, 'r', encoding='utf-8', errors='ignore') as f:
                     soup = BeautifulSoup(f.read(), 'html.parser')
                     
@@ -148,4 +150,4 @@ class DocumentExtractor:
                 count += 1
                 yield chunk_text
 
-        logger.info(f"Extracted {count} chunks from HTML directory.")
+        logger.info(f"Extracted {count} chunks from {file_idx}/{len(html_files)} HTML files.")

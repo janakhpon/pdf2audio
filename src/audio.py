@@ -1,10 +1,8 @@
 import os
-import io
 import re
 import numpy as np
 from pathlib import Path
 import soundfile as sf
-import onnxruntime
 import nltk
 from kokoro_onnx import Kokoro
 from src.config import Config
@@ -19,6 +17,13 @@ class AudioEngine:
         total_cores = os.cpu_count() or 2
         self.optimal_threads = max(1, int(total_cores * 0.85))
 
+        # Ensure nltk punkt model is available immediately on initialization
+        try:
+            nltk.data.find('tokenizers/punkt_tab')
+        except LookupError:
+            logger.info("Downloading NLTK punkt tokenization data...")
+            nltk.download('punkt_tab', quiet=True)
+
     @property
     def kokoro(self):
         if self._kokoro is None:
@@ -27,19 +32,9 @@ class AudioEngine:
             # or rely on ONNX session options implicitly through the backend if exposed.
             # (Kokoro-ONNX handles session thread count natively if passed kwargs, or defaults to all cores).
             self._kokoro = Kokoro(self.config.audio_model_path, self.config.audio_voices_path)
-            
-            # Forcing ONNX thread count via session options if exposed:
-            sess_options = onnxruntime.SessionOptions()
-            sess_options.intra_op_num_threads = self.optimal_threads
-            sess_options.inter_op_num_threads = self.optimal_threads
+            # Kokoro-ONNX does not expose SessionOptions at construction time.
+            # Provider pinned to CPU to avoid unexpected GPU fallback.
             self._kokoro.sess.set_providers(['CPUExecutionProvider'])
-            
-            # Ensure nltk punkt model is available
-            try:
-                nltk.data.find('tokenizers/punkt_tab')
-            except LookupError:
-                logger.info("Downloading NLTK punkt tokenization data...")
-                nltk.download('punkt_tab', quiet=True)
 
         return self._kokoro
 
@@ -99,8 +94,6 @@ class AudioEngine:
             return
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        logger.info(f"Synthesizing (Voice: {self.config.audio_voice}, Speed: {self.config.audio_speed}x)")
         
         text_chunks = self._chunk_text(text, max_chars=200)
         all_samples = []
