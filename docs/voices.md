@@ -1,77 +1,68 @@
 # Voices and Languages
 
-The `pdf2audio` pipeline uses Kokoro v1.0, an open-weights Text-to-Speech (TTS) engine that supports realistic voices across multiple languages.
+The `pdf2audio` pipeline uses Kokoro v1.0, an open-weights Text-to-Speech engine that supports realistic voices across multiple languages.
 
 ## Configuring Voices
 
-You can change the voice at any time by modifying `audio.voice` in `config.yaml`:
+Change the voice at any time in `config.yaml`:
 
 ```yaml
 audio:
-  voice: "af_heart" # Change this to any of the supported voices below
-  speed: 1.0 # Set speaking speed (1.0 is default, 1.2 is slightly faster)
+  voice: "af_heart" # see list below
+  speed: 1.0 # 1.0 is normal; 1.1–1.2 is good for technical content
 ```
 
 ## Supported Languages and Voices
 
-Kokoro supports multiple languages. The first letter of the voice ID indicates its language mapping:
+The voice ID prefix indicates language and gender:
 
-- `a`: American English
-- `b`: British English
-- `e`: Spanish
-- `f`: French
-- `h`: Hindi
-- `i`: Italian
-- `j`: Japanese
-- `z`: Mandarin Chinese
+- `a` — American English, `b` — British English
+- `e` — Spanish, `f` — French, `h` — Hindi
+- `i` — Italian, `j` — Japanese, `z` — Mandarin Chinese
+- Second letter: `f` = female, `m` = male
 
-The second letter implies the gender (`f` for female, `m` for male).
+### American English (Recommended for audiobooks)
 
-### American English (Recommended)
-
-Excellent for standard audiobook generation.
-
-- **`af_heart`**: (Default) American Female, smooth and narrative.
-- **`af_alloy`**: American Female, crisp and professional.
-- **`af_aoede`**: American Female.
-- **`af_bella`**: American Female, warm.
-- **`af_jessica`**: American Female.
-- **`af_kore`**: American Female.
-- **`af_nicole`**: American Female, conversational.
-- **`af_nova`**: American Female.
-- **`af_river`**: American Female.
-- **`af_sky`**: American Female.
-- **`am_adam`**: American Male, deep and clear.
-- **`am_echo`**: American Male.
-- **`am_eric`**: American Male.
-- **`am_fenrir`**: American Male.
-- **`am_liam`**: American Male.
-- **`am_michael`**: American Male.
-- **`am_onyx`**: American Male, authoritative.
-- **`am_puck`**: American Male.
+| Voice                                                                | Character                                                  |
+| -------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `af_heart`                                                           | (Default) Smooth, narrative — best for long-form listening |
+| `af_alloy`                                                           | Crisp and professional                                     |
+| `af_bella`                                                           | Warm                                                       |
+| `af_nicole`                                                          | Conversational                                             |
+| `am_adam`                                                            | Deep and clear                                             |
+| `am_onyx`                                                            | Authoritative                                              |
+| `am_michael`                                                         | Neutral male                                               |
+| `af_aoede`, `af_jessica`, `af_kore`, `af_nova`, `af_river`, `af_sky` | Additional female options                                  |
+| `am_echo`, `am_eric`, `am_fenrir`, `am_liam`, `am_puck`              | Additional male options                                    |
 
 ### British English
 
-- **`bf_emma`**: British Female.
-- **`bf_isabella`**: British Female.
-- **`bf_alice`**: British Female.
-- **`bf_lily`**: British Female.
-- **`bm_george`**: British Male.
-- **`bm_fable`**: British Male.
-- **`bm_lewis`**: British Male.
-- **`bm_daniel`**: British Male.
+| Voice         | Character      |
+| ------------- | -------------- |
+| `bf_emma`     | British Female |
+| `bf_isabella` | British Female |
+| `bf_alice`    | British Female |
+| `bf_lily`     | British Female |
+| `bm_george`   | British Male   |
+| `bm_fable`    | British Male   |
+| `bm_lewis`    | British Male   |
+| `bm_daniel`   | British Male   |
 
 ### Other Languages
 
-To narrate a PDF written in a different language, ensure the Ollama Smart Editor logic in `config.yaml` is disabled or modified to support that language, and simply pass the appropriate voice ID:
+The LLM editor is already instructed to preserve the source language — no config change needed. Just set the matching voice:
 
-- **Spanish**: `ef_dora`, `em_alex`, `em_santa`
-- **French**: `ff_siwis`
-- **Hindi**: `hm_omega`, `hf_alpha`, `hf_beta`
-- **Italian**: `if_sara`, `im_nicola`
-- **Japanese**: `jf_alpha`, `jf_gongitsune`, `jm_kumo`
-- **Mandarin Chinese**: `zf_xiaoxiao`, `zf_xiaoyi`, `zm_yunjian`, `zm_yunxi`
+| Language | Voices                                               |
+| -------- | ---------------------------------------------------- |
+| Spanish  | `ef_dora`, `em_alex`, `em_santa`                     |
+| French   | `ff_siwis`                                           |
+| Hindi    | `hf_alpha`, `hf_beta`, `hm_omega`                    |
+| Italian  | `if_sara`, `im_nicola`                               |
+| Japanese | `jf_alpha`, `jf_gongitsune`, `jm_kumo`               |
+| Mandarin | `zf_xiaoxiao`, `zf_xiaoyi`, `zm_yunjian`, `zm_yunxi` |
 
-## Performance Tuning
+## Performance Tips
 
-If narration feels slightly too slow (a common feedback loop for Audiobooks), simply increase `audio.speed` in your `config.yaml` to `1.1` or `1.2`.
+- **Speed `1.1–1.2`** — slightly faster narration, good for dense technical books
+- **Speed `0.9`** — slower pace, better for complex concepts or language learners
+- Voice quality is identical regardless of speed setting

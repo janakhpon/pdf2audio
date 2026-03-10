@@ -1,30 +1,70 @@
 # Architecture
 
-The `pdf2audio` codebase uses a modular, configuration-driven architecture designed for reliability and offline execution.
+`pdf2audio` uses a modular, configuration-driven pipeline designed for reliability and fully offline execution.
 
-## Core Flow
+## Pipeline
 
-1. **Configuration (`src/config.py`)**:
-   - All runtime settings are managed in `config.yaml`.
+```
+config.yaml
+    │
+    ▼
+DocumentExtractor  ──────────────────────────────────────────────┐
+(extractor.py)                                                    │
+  • PDF   → docling (layout-aware markdown extraction)           │
+  • EPUB  → ebooklib (chapter-by-chapter)                        │
+  • HTML  → BeautifulSoup (natural-sorted, nav/script stripped)  │
+    │                                                             │
+    ▼ raw text chunks (generator, constant memory)               │
+SmartEditor                                                       │
+(editor.py)                                                       │
+  • Optional: sends chunks to local Ollama via HTTP              │
+  • Rewrites as professor-style audiobook prose                   │
+  • Strips markdown symbols before TTS (sanitizer)               │
+  • Preserves narrative context across chunks (2000-char window)  │
+  • 3-attempt retry with exponential backoff                      │
+    │                                                             │
+    ▼ polished + sanitized text                                   │
+    ├─── saved to output/transcripts/ (if save_transcripts: true)│
+    │                                                             │
+    ▼ job_queue (maxsize=3, decouples LLM latency from TTS)      │
+AudioEngine                                                       │
+(audio.py)                                                        │
+  • kokoro-onnx: ONNX-based local TTS                            │
+  • NLTK sentence tokenizer for optimal chunk splitting           │
+  • numpy + soundfile for audio I/O (no pydub dependency)        │
+  • 3-attempt retry with exponential backoff                      │
+  • Outputs intermediate .wav chunks                              │
+    │                                                             │
+    ▼                                                             │
+merge_audio()  ◄─────────────────────────────────────────────────┘
+(merge.py)
+  • ffmpeg concat demuxer — DB-ordered, not glob-sorted
+  • Exports final MP3 / M4A / WAV
+```
 
-2. **Extraction (`src/extractor.py`)**:
-   - Reads PDFs and yields text in chunks to maintain low memory usage.
-   - Cleans basic text formatting (e.g., page numbers, newlines).
+## State Management
 
-3. **Smart Editor (`src/editor.py`)**:
-   - Routes text chunks to a local Ollama instance for formatting or summarization.
-   - Maintains narrative context between chunks when `preserve_context` is enabled.
+SQLite (WAL mode) tracks every chunk as `PENDING → PROCESSING → DONE | FAILED`. On any restart, `PROCESSING` chunks are automatically reverted to `PENDING` so work is never lost. The DB file lives alongside the output audio and is keyed by a hash of the source document + config settings.
 
-4. **Speech Synthesis (`src/audio.py`)**:
-   - Uses `kokoro-onnx` to generate realistic speech from the processed text.
-   - Exports the final audio using a memory-optimized `io.BytesIO` bridge to `pydub`.
-   - Models are loaded only when needed to optimize startup time.
+## Concurrency Model
 
-## Audio Merger (`src/merge.py`)
+The main thread runs the LLM polisher synchronously. A single daemon worker thread runs TTS. They communicate via a bounded `queue.Queue(maxsize=3)`, which:
 
-- Reads all generated audio chunks (`output/audio/X/chunk_*.mp3/wav`).
-- Utilizes `ffmpeg concat` demuxer to flawlessly multiplex chunks into a seamless `{book_name}_full.mp3` file, avoiding memory saturation.
+- Limits memory by capping how many polished chunks can pile up waiting for TTS
+- Allows LLM and TTS to overlap in time (pipeline parallelism)
+
+## Modules
+
+| Module         | Responsibility                                                             |
+| -------------- | -------------------------------------------------------------------------- |
+| `config.py`    | Loads and validates `config.yaml`, resolves paths relative to package root |
+| `extractor.py` | PDF / EPUB / HTML extraction with generator-based streaming                |
+| `editor.py`    | Ollama LLM polishing, context management, retry logic                      |
+| `audio.py`     | TTS synthesis via kokoro-onnx, text chunking, NLTK tokenization            |
+| `merge.py`     | ffmpeg-based audio assembly from DB-validated chunk list                   |
+| `logger.py`    | Standardized console logging                                               |
+| `preview.py`   | Quick TTS voice preview without running the full pipeline                  |
 
 ## Logging
 
-Standardized logging is handled by `src/logger.py` to ensure clean console output.
+All modules use a shared `logger` from `src/logger.py`. Key checkpoints logged at `INFO` level; chunked file reads at `DEBUG` level (visible with `--log-level DEBUG` if added).

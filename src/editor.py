@@ -19,7 +19,7 @@ class SmartEditor:
         self._previous_context: Optional[str] = None
         self._validated = False
 
-    def _safe_slice_context(self, text: str, max_chars: int = 800) -> str:
+    def _safe_slice_context(self, text: str, max_chars: int = 2000) -> str:
         if len(text) <= max_chars:
             return text
         sliced = text[-max_chars:]
@@ -99,16 +99,64 @@ class SmartEditor:
         raise RuntimeError("Critical LLM Failure: Unable to process transcript chunk via Ollama.")
 
     def _build_prompt(self) -> str:
-        lang_constraint = "CRITICAL: Do NOT translate the text. You MUST respond in the exact same language as the original text."
-        
+        lang_constraint = (
+            "CRITICAL: Do NOT translate the text. "
+            "You MUST respond in the exact same language as the original text."
+        )
+        purpose = (
+            "PURPOSE: You are preparing a chapter of an audiobook. "
+            "The output will be narrated by a text-to-speech voice and listened to, "
+            "never read visually. "
+            "Every word you write will be spoken aloud to the listener."
+        )
+        formatting_constraint = (
+            "CRITICAL FORMATTING RULES: "
+            "Because this is an audiobook, NEVER use asterisks, hashes, bullet points, "
+            "dashes, numbered lists, markdown, or any other visual formatting symbols. "
+            "Write only in full, flowing prose sentences and natural paragraphs. "
+            "Use plain punctuation only: commas, periods, colons, semicolons, and question marks."
+        )
+        voice_constraint = (
+            "VOICE AND TONE: "
+            "Write as a distinguished professor and leading expert in the field, "
+            "speaking directly to their students in a live lecture. "
+            "Your tone should be warm, authoritative, and intellectually engaging. "
+            "Ground every concept with both theoretical foundations and practical, "
+            "real-world examples. "
+            "Use clear transitions between ideas, as a skilled speaker would, "
+            "so the listener can follow along effortlessly."
+        )
+
         if self.mode == "short":
-            return f"Summarize the text into a truly concise, punchy version. {lang_constraint} Return ONLY the polished short summary."
-        elif self.mode == "medium":
-            return f"Summarize the text into a medium-length version, capturing main points. {lang_constraint} Return ONLY the polished medium summary."
-        else:
             return (
-                f"Polish the following text into a clean transcript. Fix awkward line breaks and grammar. "
+                f"{purpose} "
+                f"Condense the following text into a brief spoken summary of the core idea, "
+                f"suitable for an audiobook chapter introduction. "
+                f"{voice_constraint} "
                 f"{lang_constraint} "
-                f"CRITICAL: Do NOT summarize, cut, or skip ANY sentences. Output the ENTIRE text word for word. "
-                f"Return ONLY the polished text."
+                f"{formatting_constraint} "
+                f"Return ONLY the spoken summary."
+            )
+        elif self.mode == "medium":
+            return (
+                f"{purpose} "
+                f"Summarize the following text into a medium-length spoken explanation "
+                f"for an audiobook, covering all key points and their significance. "
+                f"{voice_constraint} "
+                f"{lang_constraint} "
+                f"{formatting_constraint} "
+                f"Return ONLY the spoken summary."
+            )
+        else:  # full
+            return (
+                f"{purpose} "
+                f"Rewrite the following text as a complete audiobook chapter transcript. "
+                f"Preserve every concept, argument, and detail from the source. "
+                f"Fix awkward phrasing, broken sentences, and any formatting artifacts "
+                f"from PDF or HTML extraction. "
+                f"Do NOT summarize, skip, or omit any content. "
+                f"{voice_constraint} "
+                f"{lang_constraint} "
+                f"{formatting_constraint} "
+                f"Return ONLY the complete audiobook transcript."
             )

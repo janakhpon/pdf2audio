@@ -1,31 +1,36 @@
 # pdf2audio
 
-Convert digital documents into structured audiobooks locally and deterministically.
+Convert PDFs, EPUBs, and HTML books into audiobooks — fully offline, on your own hardware.
 
 ## Supported Formats
 
-- **PDF**: Uses AI layout analysis (`docling`) to structurally understand multi-column text, headers, and tables instead of blindly scraping characters.
-- **EPUB**: Natively parses chapters sequentially.
-- **HTML Directories**: Sorts and extracts content from a folder of HTML files, intelligently decomposing navigation and style tags to isolate reading material.
+| Format             | How it works                                                                                                     |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| **PDF**            | Uses `docling` for layout-aware extraction — handles multi-column text, headers, and tables correctly            |
+| **EPUB**           | Parses chapters sequentially via `ebooklib`                                                                      |
+| **HTML directory** | Sorts files naturally (0, 1, 2… or named chapters), strips nav/script/style tags, extracts clean reading content |
 
-## Architecture Highlights
+## How It Works
 
-- **100% Offline**: Local TTS generation utilizing `kokoro-onnx`.
-- **Fault-Tolerant State**: SQLite tracks chunk extraction progress natively. Safe to kill, configure, and resume operations at any time without data loss.
-- **Constant Memory**: Pipeline utilizes true Python generators to process infinite-scale books with near-zero idle RAM overhead.
-- **LLM Polisher (Optional)**: Can automatically offload chunks to a local Ollama model to refine NLP syntax or patch raw OCR artifacts _before_ TTS generation.
+```
+Document → Extract text → LLM polish (optional) → TTS synthesis → Merge to MP3
+```
 
-## Quick Start Guide
+- **100% local** — no cloud APIs, no data leaves your machine
+- **Resumable** — SQLite tracks every chunk; kill it anytime and re-run to continue
+- **Low memory** — generator-based pipeline processes arbitrarily large books
+- **Parallel** — LLM polishing and audio synthesis run as decoupled workers
+
+## Quick Start
 
 ### Prerequisites
 
 - Python 3.11+
-- `uv` package manager
-- `ffmpeg` installed on the host OS
+- [`uv`](https://github.com/astral-sh/uv) package manager
+- `ffmpeg` (`brew install ffmpeg`)
+- [Ollama](https://ollama.ai) (optional, for transcript polishing)
 
-### Setup
-
-1. Clone the repository and install dependencies:
+### Install
 
 ```bash
 git clone git@github.com:janakhpon/pdf2audio.git
@@ -33,38 +38,67 @@ cd pdf2audio
 uv sync
 ```
 
-2. Acquire the necessary ONNX voice models:
+### Download TTS models
 
 ```bash
 mkdir -p assets/models
-curl -sL https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx -o assets/models/kokoro-v1.0.onnx
-curl -sL https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin -o assets/models/voices-v1.0.bin
+curl -sL https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx \
+     -o assets/models/kokoro-v1.0.onnx
+curl -sL https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin \
+     -o assets/models/voices-v1.0.bin
 ```
 
 ## Usage
 
-Execution boundaries are strictly managed via `config.yaml`.
+All settings are in `config.yaml`:
 
-1. Modify `config.yaml` to set your `source.path` (accepts distinct files, lists of files, or entire directories).
-2. Adjust `audio` schemas to map target voices or playback speed.
-3. (Optional) Toggle the `editor` block to utilize LLM NLP polishing via a local Ollama instance (ensure `ollama run [model]` is active).
-
-### Running the Pipeline
-
-Preview the TTS engine's configured voice profile:
+1. Set `source.path` to your file or folder
+2. Choose a voice and speed under `audio`
+3. (Optional) Enable the `editor` block with an Ollama model for LLM polishing — makes a significant difference on PDFs with raw OCR artifacts
 
 ```bash
+# Preview the configured TTS voice
 uv run python -m src.preview
+
+# Run the full pipeline
+uv run python -m src
+
+# Manually merge chunks (if a previous run was interrupted)
+uv run python -m src.merge
 ```
 
-Execute the primary extraction and synthesis daemon:
+## Recommended Models for Transcript Polishing
+
+For the best audiobook quality, enable the `editor` block and use one of these models:
+
+| Model          | RAM needed | Best for                                                       |
+| -------------- | ---------- | -------------------------------------------------------------- |
+| `gemma3:27b`   | ~18 GB     | **Best overall** — excellent prose flow, rarely leaks markdown |
+| `qwen2.5:72b`  | ~45 GB     | Best raw quality if you have the RAM                           |
+| `llama3.3:70b` | ~45 GB     | Strong instruction-following, natural lecture tone             |
+| `qwen2.5:14b`  | ~10 GB     | Best mid-range — good quality on 16 GB machines                |
+| `phi4:14b`     | ~10 GB     | Best for constrained hardware, punches above its weight        |
+
+Pull a model and set it in `config.yaml`:
 
 ```bash
-uv run python -m src
+ollama pull gemma3:27b
+```
+
+```yaml
+editor:
+  enabled: true
+  model: "gemma3:27b"
+  mode: "full" # "full" preserves all content, "medium"/"short" summarize
 ```
 
 ## Operational Notes
 
-- **Disk Validation**: The system actively monitors disk capacity mid-generation. Ensure the host drive maintains at least 500MB of free space or the daemon will gracefully halt extraction to protect the OS.
-- **Concurrency**: Text generation (LLM block) and Audio generation (ONNX Engine) are decoupled async workers. CPU loads will scale dynamically to match threaded targets.
-- **Safe-Merge**: Synthesized audio chunks are concatenated automatically at the end of the pipeline. If a run crashes natively, execute `uv run python -m src.merge` anytime to compile all currently successful `.wav` chunks deterministically.
+- **Disk space** — the pipeline monitors free space mid-run and halts cleanly if it drops below 500 MB
+- **Chunk size** — `source.chunk_size` controls how many files/blocks are grouped into one audio chunk. Set to `1` for one audio file per chapter
+- **Output** — audio chunks are automatically merged into a single MP3/M4A/WAV at the end of each run
+
+## Documentation
+
+- [Architecture](docs/architecture.md) — pipeline design, concurrency model, and module breakdown
+- [Voices & Languages](docs/voices.md) — all supported voices, languages, and speed tuning

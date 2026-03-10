@@ -1,9 +1,11 @@
 import sys
+import re
 import sqlite3
 import hashlib
 import shutil
 import queue
 import threading
+import time
 from pathlib import Path
 
 from src.config import load_config
@@ -13,18 +15,18 @@ from src.editor import SmartEditor
 from src.audio import AudioEngine
 from src.merge import merge_audio
 
-def init_db(config, pdf_hash: str):
-    db_path = config.out_audio_dir / f"pdf2audio_state_{pdf_hash}.db"
-    conn = sqlite3.connect(db_path)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS chunks 
-                 (pdf_hash TEXT, chunk_idx INTEGER, status TEXT, PRIMARY KEY(pdf_hash, chunk_idx))''')
-    
-    # Auto-revert any dirty state from a previous crashed run
-    c.execute("UPDATE chunks SET status='PENDING' WHERE pdf_hash=? AND status='PROCESSING'", (pdf_hash,))
-    
-    conn.commit()
-    return conn
+
+def _sanitize_for_tts(text: str) -> str:
+    """Strip residual markdown the LLM may emit despite instructions."""
+    text = re.sub(r'\*+', '', text)                          # asterisks
+    text = re.sub(r'#+\s*', '', text)                        # headings
+    text = re.sub(r'`+', '', text)                           # code ticks
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)   # [link](url) → link text
+    text = re.sub(r'-{2,}', ',', text)                       # em-dashes → comma pause
+    text = re.sub(r'_{2,}', '', text)                        # double underscores
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
 
 def get_document_hash(doc_path: Path, config):
     hasher = hashlib.md5()
@@ -54,10 +56,11 @@ def process_single_document(doc_path: Path, config):
     logger.info(f"Processing: {doc_path.name}")
     doc_hash = get_document_hash(doc_path, config)
     db_conn = sqlite3.connect(config.out_audio_dir / f"pdf2audio_state_{doc_hash}.db", check_same_thread=False)
-    
-    # Initialize DB properly
+    db_conn.execute("PRAGMA journal_mode=WAL")      # Safe for multi-thread reader/writer
+    db_conn.execute("PRAGMA synchronous=NORMAL")    # Balance durability vs. speed
+
     c = db_conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS chunks 
+    c.execute('''CREATE TABLE IF NOT EXISTS chunks
                  (pdf_hash TEXT, chunk_idx INTEGER, status TEXT, PRIMARY KEY(pdf_hash, chunk_idx))''')
     c.execute("UPDATE chunks SET status='PENDING' WHERE pdf_hash=? AND status='PROCESSING'", (doc_hash,))
     db_conn.commit()
@@ -82,18 +85,25 @@ def process_single_document(doc_path: Path, config):
             job = job_queue.get()
             if job is None:
                 break
-                
+
             chunk_idx, text, audio_out = job
-            try:
-                audio_engine.generate(text, audio_out)
-                c.execute("UPDATE chunks SET status='DONE' WHERE pdf_hash=? AND chunk_idx=?", (doc_hash, chunk_idx))
-                db_conn.commit()
-            except Exception as e:
-                c.execute("UPDATE chunks SET status='FAILED' WHERE pdf_hash=? AND chunk_idx=?", (doc_hash, chunk_idx))
-                db_conn.commit()
-                logger.error(f"Error processing chunk {chunk_idx}: {e}. Marking as FAILED and continuing.")
-            finally:
-                job_queue.task_done()
+            max_tts_retries = 3
+            for attempt in range(max_tts_retries):
+                try:
+                    audio_engine.generate(text, audio_out)
+                    c.execute("UPDATE chunks SET status='DONE' WHERE pdf_hash=? AND chunk_idx=?", (doc_hash, chunk_idx))
+                    db_conn.commit()
+                    break
+                except Exception as e:
+                    if attempt == max_tts_retries - 1:
+                        c.execute("UPDATE chunks SET status='FAILED' WHERE pdf_hash=? AND chunk_idx=?", (doc_hash, chunk_idx))
+                        db_conn.commit()
+                        logger.error(f"TTS failed after {max_tts_retries} attempts for chunk {chunk_idx}: {e}. Marking as FAILED.")
+                    else:
+                        delay = 2 ** attempt
+                        logger.warning(f"TTS error (Attempt {attempt + 1}/{max_tts_retries}): {e}. Retrying in {delay}s...")
+                        time.sleep(delay)
+            job_queue.task_done()
 
     worker_thread = threading.Thread(target=tts_worker, daemon=True)
     worker_thread.start()
@@ -138,12 +148,13 @@ def process_single_document(doc_path: Path, config):
             db_conn.commit()
             
             polished_text = editor.process_transcript(raw_text)
-            
+            clean_text = _sanitize_for_tts(polished_text)
+
             if config.save_transcripts:
                 with open(transcript_out, "w", encoding="utf-8") as f:
-                    f.write(polished_text)
-                    
-            job_queue.put((chunks_processed, polished_text, audio_out))
+                    f.write(clean_text)
+
+            job_queue.put((chunks_processed, clean_text, audio_out))
 
         except Exception as e:
             c.execute("UPDATE chunks SET status='FAILED' WHERE pdf_hash=? AND chunk_idx=?", (doc_hash, chunks_processed))
