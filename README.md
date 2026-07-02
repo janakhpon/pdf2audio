@@ -16,10 +16,12 @@ Convert PDFs, EPUBs, and HTML books into audiobooks — fully offline, on your o
 Document → Extract text → LLM polish (optional) → TTS synthesis → Merge to MP3
 ```
 
-- **100% local** — no cloud APIs, no data leaves your machine
+- **Local** — no cloud APIs; text and audio stay on your machine (see the first-run note below)
 - **Resumable** — SQLite tracks every chunk; kill it anytime and re-run to continue
-- **Low memory** — generator-based pipeline processes arbitrarily large books
-- **Parallel** — LLM polishing and audio synthesis run as decoupled workers
+- **Streaming** — extraction yields chunk-by-chunk, so EPUB/HTML books are processed incrementally rather than all at once. Note: PDF extraction loads the whole document into memory (a `docling` limitation), so peak memory scales with the size of a single PDF
+- **Pipelined** — extraction and LLM polishing run on the main thread while TTS synthesis runs on a separate worker (bounded queue), so audio generation overlaps with reading the next chunk
+
+> **First-run / offline note:** the first run downloads the NLTK `punkt_tab` sentence tokenizer (~a few MB, one time). After that the pipeline runs fully offline. The TTS models (below) and any Ollama model must also be downloaded ahead of time.
 
 ## Quick Start
 
