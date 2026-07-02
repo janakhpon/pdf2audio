@@ -1,6 +1,6 @@
 # pdf2audio
 
-Convert PDFs, EPUBs, and HTML books into audiobooks — fully offline, on your own hardware.
+Convert PDFs, EPUBs, and HTML books into audiobooks — offline, on your own hardware.
 
 ## Supported Formats
 
@@ -100,7 +100,23 @@ editor:
 - **Chunk size** — `source.chunk_size` controls how many files/blocks are grouped into one audio chunk. Set to `1` for one audio file per chapter
 - **Output** — audio chunks are automatically merged into a single MP3/M4A/WAV at the end of each run
 
+## Development
+
+Install the dev extras and run the quality gate (lint, format, type-check, tests):
+
+```bash
+uv sync --extra dev
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy src
+uv run pytest
+```
+
+The test suite is fully offline (all heavy dependencies are mocked). CI runs the same
+gate on every push and pull request.
+
 ## Documentation
 
 - [Architecture](docs/architecture.md) — pipeline design, concurrency model, and module breakdown
+- [Audit](docs/AUDIT.md) — engineering audit findings, and [ADR 0001](docs/adr/0001-audit-hardening.md) for the hardening decisions
 - [Voices & Languages](docs/voices.md) — all supported voices, languages, and speed tuning
