@@ -6,7 +6,6 @@ from __future__ import annotations
 import subprocess
 
 import pytest
-
 from src import merge as merge_mod
 from src.merge import merge_audio
 

@@ -8,7 +8,6 @@ import urllib.request
 from pathlib import Path
 
 import pytest
-
 from src.config import Config
 from src.editor import SmartEditor
 from src.errors import EditorError

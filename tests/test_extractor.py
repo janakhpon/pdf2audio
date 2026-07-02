@@ -4,10 +4,8 @@ chunking), and the typed-error surface for bad inputs. No real PDF/EPUB/docling 
 from __future__ import annotations
 
 import pytest
-
-from src.extractor import DocumentExtractor
 from src.errors import ExtractionError
-
+from src.extractor import DocumentExtractor
 
 # --------------------------------------------------------------------------- _clean_text
 
