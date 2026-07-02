@@ -6,7 +6,6 @@ from pathlib import Path
 from textwrap import dedent
 
 import pytest
-
 from src.config import Config, load_config
 from src.errors import ConfigError
 
