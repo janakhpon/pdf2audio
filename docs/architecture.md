@@ -14,7 +14,7 @@ DocumentExtractor  ────────────────────�
   • EPUB  → ebooklib (chapter-by-chapter)                        │
   • HTML  → BeautifulSoup (natural-sorted, nav/script stripped)  │
     │                                                             │
-    ▼ raw text chunks (generator, constant memory)               │
+    ▼ raw text chunks (generator; PDF loads whole doc first)     │
 SmartEditor                                                       │
 (editor.py)                                                       │
   • Optional: sends chunks to local Ollama via HTTP              │
@@ -52,6 +52,8 @@ The main thread runs the LLM polisher synchronously. A single daemon worker thre
 
 - Limits memory by capping how many polished chunks can pile up waiting for TTS
 - Allows LLM and TTS to overlap in time (pipeline parallelism)
+
+Both threads share one SQLite connection. Because a `sqlite3` connection/cursor is not safe for concurrent use (WAL protects the file, not the Python objects), every read and write goes through a single `threading.Lock` (`db_write` / `db_query` helpers in `__main__.py`). On shutdown — normal, low-disk, or `KeyboardInterrupt` — the worker is always drained via a `try/finally` (`job_queue.put(None); join()`) so in-flight audio finishes and no chunk is left half-written.
 
 ## Modules
 
