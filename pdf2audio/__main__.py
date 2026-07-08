@@ -1,4 +1,3 @@
-import hashlib
 import queue
 import re
 import shutil
@@ -7,6 +6,7 @@ import threading
 import time
 from pathlib import Path
 
+from pdf2audio import documents
 from pdf2audio.audio import AudioEngine
 from pdf2audio.config import Config, load_config
 from pdf2audio.editor import SmartEditor
@@ -19,7 +19,6 @@ from pdf2audio.state import ChunkStateStore, ChunkStatus
 _MIN_FREE_BYTES = 500 * 1024 * 1024  # halt extraction if free disk drops below this
 _LOW_DISK_WARN_GB = 5.0
 _MAX_TTS_RETRIES = 3
-_SUPPORTED_DOC_SUFFIXES = {".pdf", ".epub"}
 
 
 def _sanitize_for_tts(text: str) -> str:
@@ -34,36 +33,12 @@ def _sanitize_for_tts(text: str) -> str:
     return text.strip()
 
 
-def _natural_sort_key(path: Path) -> list[int | str]:
-    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"([0-9]+)", path.name)]
-
-
-def get_document_hash(doc_path: Path, config: Config) -> str:
-    """Content+config hash that keys the resumable state DB (changing either restarts work)."""
-    hasher = hashlib.md5()
-    config_state = (
-        f"{config.audio_voice}_{config.audio_speed}_{config.editor_model}_"
-        f"{config.editor_mode}_{config.editor_enabled}"
-    )
-    hasher.update(config_state.encode("utf-8"))
-
-    if doc_path.is_dir():
-        for html_file in sorted(doc_path.glob("*.html"), key=_natural_sort_key):
-            hasher.update(html_file.name.encode("utf-8"))
-            hasher.update(str(html_file.stat().st_mtime).encode("utf-8"))
-    else:
-        with open(doc_path, "rb") as fh:
-            while buf := fh.read(65536):
-                hasher.update(buf)
-    return hasher.hexdigest()
-
-
 def process_single_document(doc_path: Path, config: Config) -> None:
-    if doc_path.is_file() and doc_path.suffix.lower() not in _SUPPORTED_DOC_SUFFIXES:
+    if doc_path.is_file() and doc_path.suffix.lower() not in documents.SUPPORTED_DOC_SUFFIXES:
         return
 
     logger.info(f"Processing: {doc_path.name}")
-    doc_hash = get_document_hash(doc_path, config)
+    doc_hash = documents.document_hash(doc_path, config)
     db_path = config.out_audio_dir / f"pdf2audio_state_{doc_hash}.db"
 
     extractor = DocumentExtractor(chunk_size=config.chunk_size)
@@ -188,25 +163,6 @@ def process_single_document(doc_path: Path, config: Config) -> None:
     logger.info(f"Completed: {doc_path.name}")
 
 
-def _discover_documents(config: Config) -> list[Path]:
-    source_input = config.source_path
-    source_paths = source_input if isinstance(source_input, list) else [source_input]
-    doc_files: list[Path] = []
-    for sp in source_paths:
-        if not sp.exists():
-            logger.warning(f"Source path does not exist: {sp}")
-            continue
-        if sp.is_dir():
-            if list(sp.glob("*.html")):
-                doc_files.append(sp)
-            else:
-                doc_files.extend(sorted(sp.glob("*.pdf")))
-                doc_files.extend(sorted(sp.glob("*.epub")))
-        elif sp.is_file() and sp.suffix.lower() in _SUPPORTED_DOC_SUFFIXES:
-            doc_files.append(sp)
-    return doc_files
-
-
 def main() -> None:
     if not shutil.which("ffmpeg"):
         logger.error(
@@ -231,7 +187,7 @@ def main() -> None:
     else:
         logger.info(f"Disk check passed: {free_gb:.2f} GB available.")
 
-    doc_files = _discover_documents(config)
+    doc_files = documents.discover_documents(config.source_path)
     if not doc_files:
         logger.error("No valid PDF, EPUB, or HTML directory found.")
         sys.exit(1)
