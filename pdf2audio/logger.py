@@ -21,3 +21,8 @@ def setup_logger(name: str = "pdf2audio") -> logging.Logger:
 
 
 logger = setup_logger()
+
+
+def set_level(level: str) -> None:
+    """Set the log level from a name (DEBUG/INFO/WARNING/ERROR); used by the CLI --log-level."""
+    logger.setLevel(level.upper())

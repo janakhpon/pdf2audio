@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import os
 import subprocess
-import sys
 from pathlib import Path
 
-from pdf2audio.config import load_config
-from pdf2audio.documents import natural_sort_key
-from pdf2audio.errors import PDF2AudioError
+from pdf2audio import documents
+from pdf2audio.config import Config
 from pdf2audio.logger import logger
 
 
@@ -23,7 +21,10 @@ def merge_audio(
     else:
         # Fallback to globbing when a strict DB-ordered list isn't provided
         # (e.g. the standalone `merge` command).
-        files = [str(p) for p in sorted(Path(directory).glob("chunk_*.wav"), key=natural_sort_key)]
+        files = [
+            str(p)
+            for p in sorted(Path(directory).glob("chunk_*.wav"), key=documents.natural_sort_key)
+        ]
 
     if not files:
         logger.error(f"No files safely validated for merge in {directory}")
@@ -84,43 +85,18 @@ def merge_audio(
             os.remove(list_path)
 
 
-def main() -> None:
-    try:
-        config = load_config("config.yaml")
-    except PDF2AudioError as exc:
-        logger.error(f"Config error: {exc}")
-        sys.exit(1)
+def merge_all(config: Config) -> int:
+    """Merge each discovered document's chunk directory into one file. Returns the count merged.
 
-    source_input = config.source_path
-    source_paths = source_input if isinstance(source_input, list) else [source_input]
-
-    doc_files: list = []
-    for sp in source_paths:
-        if not sp.exists():
-            continue
-        if sp.is_dir():
-            if list(sp.glob("*.html")):
-                doc_files.append(sp)
-            else:
-                doc_files.extend(list(sp.glob("*.pdf")))
-                doc_files.extend(list(sp.glob("*.epub")))
-        elif sp.is_file() and sp.suffix.lower() in [".pdf", ".epub"]:
-            doc_files.append(sp)
-
-    if not doc_files:
-        logger.error("No target document files found in config to derive merge paths.")
-        sys.exit(1)
-
-    merged_count = 0
-    for doc_file in doc_files:
-        book_audio_dir = config.out_audio_dir / doc_file.stem
-        if book_audio_dir.exists() and book_audio_dir.is_dir():
+    Used by the standalone ``merge`` command to re-assemble output after an interrupted run,
+    reusing the same document discovery as the main pipeline.
+    """
+    merged = 0
+    for doc in documents.discover_documents(config.source_path):
+        book_audio_dir = config.out_audio_dir / doc.stem
+        if book_audio_dir.is_dir():
             merge_audio(str(book_audio_dir), config.audio_format)
-            merged_count += 1
-
-    if merged_count == 0:
+            merged += 1
+    if merged == 0:
         logger.warning("No generated output directories found to merge.")
-
-
-if __name__ == "__main__":
-    main()
+    return merged
