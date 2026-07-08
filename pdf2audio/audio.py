@@ -12,6 +12,8 @@ from pdf2audio.config import Config
 from pdf2audio.errors import AudioError
 from pdf2audio.logger import logger
 
+_DEFAULT_SAMPLE_RATE = 24000  # kokoro's output rate; used only for the empty-output fallback
+
 
 class AudioEngine:
     def __init__(self, config: Config) -> None:
@@ -108,51 +110,74 @@ class AudioEngine:
                     chunks.append(current_chunk)
         return chunks
 
+    def _synthesize(self, chunk: str) -> tuple[np.ndarray, int] | None:
+        """Synthesize one text chunk, or None if it has no pronounceable content."""
+        try:
+            samples, sr = self.kokoro.create(
+                chunk,
+                voice=self.config.audio_voice,
+                speed=self.config.audio_speed,
+                lang="en-us",
+            )
+            return samples, int(sr)
+        except ValueError as exc:
+            # kokoro raises ValueError when a chunk yields no phonemes (e.g. only
+            # punctuation/symbols). That is expected and skippable; anything else is real.
+            if "need at least one array to concatenate" in str(exc):
+                logger.debug(f"Skipped unpronounceable chunk: {chunk[:30]}...")
+                return None
+            raise AudioError(f"TTS synthesis failed for chunk '{chunk[:30]}...': {exc}") from exc
+
     def generate(self, text: str, output_path: Path) -> None:
+        """Synthesize `text` to a single wav, streaming segments to disk (bounded memory).
+
+        Segments are written incrementally into a temp file, then atomically renamed, so a
+        partial or crashed write never leaves a file that looks complete.
+        """
         if not text.strip():
             logger.warning("Empty text provided for audio generation.")
             return
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        text_chunks = self._chunk_text(text, max_chars=200)
-        all_samples: list[np.ndarray] = []
-        sample_rate = 24000
-
-        for chunk in text_chunks:
-            chunk = chunk.strip()
-            if not chunk:
-                continue
-
-            try:
-                samples, sr = self.kokoro.create(
-                    chunk,
-                    voice=self.config.audio_voice,
-                    speed=self.config.audio_speed,
-                    lang="en-us",
-                )
-                sample_rate = sr
-                all_samples.append(samples)
-            except ValueError as exc:
-                # kokoro raises ValueError when a chunk yields no phonemes (e.g. only
-                # punctuation/symbols). That is expected and skippable; anything else is real.
-                if "need at least one array to concatenate" in str(exc):
-                    logger.debug(f"Skipped unpronounceable chunk: {chunk[:30]}...")
-                else:
-                    raise AudioError(
-                        f"TTS synthesis failed for chunk '{chunk[:30]}...': {exc}"
-                    ) from exc
-
-        samples = np.concatenate(all_samples) if all_samples else np.array([], dtype=np.float32)
-
         final_path = output_path.with_suffix(".wav")  # intermediate chunks are always wav
         temp_final = output_path.with_suffix(".wav.tmp")
 
+        writer: sf.SoundFile | None = None
+        published = False
         try:
-            sf.write(str(temp_final), samples, sample_rate, format="wav")
-            temp_final.replace(final_path)  # atomic publish so partial writes never look done
+            for chunk in self._chunk_text(text, max_chars=200):
+                chunk = chunk.strip()
+                if not chunk:
+                    continue
+                result = self._synthesize(chunk)
+                if result is None:
+                    continue
+                samples, sr = result
+                if writer is None:
+                    writer = sf.SoundFile(
+                        str(temp_final), mode="w", samplerate=sr, channels=1, format="WAV"
+                    )
+                writer.write(samples)
+
+            if writer is None:
+                # Nothing pronounceable — emit a valid empty wav so downstream state is consistent.
+                writer = sf.SoundFile(
+                    str(temp_final),
+                    mode="w",
+                    samplerate=_DEFAULT_SAMPLE_RATE,
+                    channels=1,
+                    format="WAV",
+                )
+
+            writer.close()
+            writer = None
+            temp_final.replace(final_path)  # atomic publish
+            published = True
             logger.info(f"Exported audio to: {final_path}")
         except OSError as exc:
-            if temp_final.exists():
-                temp_final.unlink()
             raise AudioError(f"Failed to write audio {final_path}: {exc}") from exc
+        finally:
+            if writer is not None:
+                writer.close()
+            if not published:
+                temp_final.unlink(missing_ok=True)
