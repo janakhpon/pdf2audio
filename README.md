@@ -60,14 +60,20 @@ All settings are in `config.yaml`:
 
 ```bash
 # Preview the configured TTS voice
-uv run python -m src.preview
+uv run pdf2audio preview
 
 # Run the full pipeline
-uv run python -m src
+uv run pdf2audio run
+
+# See what would be processed, without running
+uv run pdf2audio run --dry-run
 
 # Manually merge chunks (if a previous run was interrupted)
-uv run python -m src.merge
+uv run pdf2audio merge
 ```
+
+Global flags: `--config PATH` (default `config.yaml`) and `--log-level {DEBUG,INFO,WARNING,ERROR}`.
+`pdf2audio --help` lists everything. (`python -m pdf2audio` also works.)
 
 ## Recommended Models for Transcript Polishing
 
@@ -108,7 +114,7 @@ Install the dev extras and run the quality gate (lint, format, type-check, tests
 uv sync --extra dev
 uv run ruff check .
 uv run ruff format --check .
-uv run mypy src
+uv run mypy pdf2audio
 uv run pytest
 ```
 
@@ -118,5 +124,6 @@ gate on every push and pull request.
 ## Documentation
 
 - [Architecture](docs/architecture.md) — pipeline design, concurrency model, and module breakdown
-- [Audit](docs/AUDIT.md) — engineering audit findings, and [ADR 0001](docs/adr/0001-audit-hardening.md) for the hardening decisions
+- [Audit](docs/AUDIT.md) — correctness/safety audit, and [ADR 0001](docs/adr/0001-audit-hardening.md) for those decisions
+- [Staff audit](docs/staff-audit.md) — the craftsmanship review, and [ADR 0002](docs/adr/0002-staff-refactor.md) for the refactor decisions
 - [Voices & Languages](docs/voices.md) — all supported voices, languages, and speed tuning
