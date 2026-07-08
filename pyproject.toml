@@ -41,6 +41,9 @@ dev = [
     "types-PyYAML>=6.0.0",
 ]
 
+[project.scripts]
+pdf2audio = "pdf2audio.cli:main"
+
 [tool.hatch.build.targets.wheel]
 packages = ["pdf2audio"]
 
