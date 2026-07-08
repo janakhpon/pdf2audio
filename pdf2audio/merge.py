@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import glob
 import os
-import re
 import subprocess
 import sys
+from pathlib import Path
 
 from pdf2audio.config import load_config
+from pdf2audio.documents import natural_sort_key
 from pdf2audio.errors import PDF2AudioError
 from pdf2audio.logger import logger
 
@@ -21,15 +21,9 @@ def merge_audio(
     if valid_files is not None:
         files = valid_files  # Already strict and chronologically ordered by the DB
     else:
-        # Fallback to legacy globbing when a strict list isn't provided
-        # (e.g. standalone module run).
-        pattern = os.path.join(directory, "chunk_*.wav")
-
-        def natural_sort_key(s: str) -> int:
-            match = re.search(r"\d+", os.path.basename(s))
-            return int(match.group()) if match else 0
-
-        files = sorted(glob.glob(pattern), key=natural_sort_key)
+        # Fallback to globbing when a strict DB-ordered list isn't provided
+        # (e.g. the standalone `merge` command).
+        files = [str(p) for p in sorted(Path(directory).glob("chunk_*.wav"), key=natural_sort_key)]
 
     if not files:
         logger.error(f"No files safely validated for merge in {directory}")

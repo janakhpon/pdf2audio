@@ -9,6 +9,7 @@ import ebooklib
 from bs4 import BeautifulSoup
 from ebooklib import epub
 
+from pdf2audio.documents import natural_sort_key
 from pdf2audio.errors import ExtractionError
 from pdf2audio.logger import logger
 
@@ -133,12 +134,6 @@ class DocumentExtractor:
         logger.info(f"Extracted {count} chunks from EPUB.")
 
     def _process_html_dir(self, dir_path: Path) -> Iterator[str]:
-        def natural_sort_key(path: Path) -> list[int | str]:
-            return [
-                int(text) if text.isdigit() else text.lower()
-                for text in re.split("([0-9]+)", path.name)
-            ]
-
         html_files = sorted(dir_path.glob("*.html"), key=natural_sort_key)
         logger.info(f"HTML directory: found {len(html_files)} file(s) in sorted order.")
 
