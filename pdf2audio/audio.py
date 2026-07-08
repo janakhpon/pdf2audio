@@ -7,9 +7,10 @@ import nltk
 import numpy as np
 import soundfile as sf
 from kokoro_onnx import Kokoro
-from src.config import Config
-from src.errors import AudioError
-from src.logger import logger
+
+from pdf2audio.config import Config
+from pdf2audio.errors import AudioError
+from pdf2audio.logger import logger
 
 
 class AudioEngine:

@@ -6,8 +6,8 @@ from pathlib import Path
 from textwrap import dedent
 
 import pytest
-from src.config import Config, load_config
-from src.errors import ConfigError
+from pdf2audio.config import Config, load_config
+from pdf2audio.errors import ConfigError
 
 
 def _write_config(tmp_path: Path, body: str) -> Path:
