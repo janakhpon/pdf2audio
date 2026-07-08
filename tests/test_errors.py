@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from src.errors import (
+from pdf2audio.errors import (
     AudioError,
     ConfigError,
     DatabaseError,

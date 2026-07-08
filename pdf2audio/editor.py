@@ -4,9 +4,9 @@ import time
 import urllib.error
 import urllib.request
 
-from src.config import Config
-from src.errors import EditorError
-from src.logger import logger
+from pdf2audio.config import Config
+from pdf2audio.errors import EditorError
+from pdf2audio.logger import logger
 
 _MAX_RETRIES = 3
 _BASE_DELAY = 2.0

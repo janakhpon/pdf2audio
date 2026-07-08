@@ -6,9 +6,9 @@ import re
 import subprocess
 import sys
 
-from src.config import load_config
-from src.errors import PDF2AudioError
-from src.logger import logger
+from pdf2audio.config import load_config
+from pdf2audio.errors import PDF2AudioError
+from pdf2audio.logger import logger
 
 
 def merge_audio(

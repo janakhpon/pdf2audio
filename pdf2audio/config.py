@@ -4,7 +4,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import yaml
-from src.errors import ConfigError
+
+from pdf2audio.errors import ConfigError
 
 
 @dataclass

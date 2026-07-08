@@ -8,8 +8,9 @@ from typing import TYPE_CHECKING
 import ebooklib
 from bs4 import BeautifulSoup
 from ebooklib import epub
-from src.errors import ExtractionError
-from src.logger import logger
+
+from pdf2audio.errors import ExtractionError
+from pdf2audio.logger import logger
 
 if TYPE_CHECKING:
     from docling.document_converter import DocumentConverter

@@ -8,13 +8,13 @@ import threading
 import time
 from pathlib import Path
 
-from src.audio import AudioEngine
-from src.config import Config, load_config
-from src.editor import SmartEditor
-from src.errors import PDF2AudioError
-from src.extractor import DocumentExtractor
-from src.logger import logger
-from src.merge import merge_audio
+from pdf2audio.audio import AudioEngine
+from pdf2audio.config import Config, load_config
+from pdf2audio.editor import SmartEditor
+from pdf2audio.errors import PDF2AudioError
+from pdf2audio.extractor import DocumentExtractor
+from pdf2audio.logger import logger
+from pdf2audio.merge import merge_audio
 
 _MIN_FREE_BYTES = 500 * 1024 * 1024  # halt extraction if free disk drops below this
 _LOW_DISK_WARN_GB = 5.0

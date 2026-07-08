@@ -8,9 +8,9 @@ import urllib.request
 from pathlib import Path
 
 import pytest
-from src.config import Config
-from src.editor import SmartEditor
-from src.errors import EditorError
+from pdf2audio.config import Config
+from pdf2audio.editor import SmartEditor
+from pdf2audio.errors import EditorError
 
 
 def make_config(**overrides) -> Config:

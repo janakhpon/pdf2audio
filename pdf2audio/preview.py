@@ -1,9 +1,9 @@
 import sys
 
-from src.audio import AudioEngine
-from src.config import load_config
-from src.errors import PDF2AudioError
-from src.logger import logger
+from pdf2audio.audio import AudioEngine
+from pdf2audio.config import load_config
+from pdf2audio.errors import PDF2AudioError
+from pdf2audio.logger import logger
 
 
 def main() -> None:
