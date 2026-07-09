@@ -42,12 +42,14 @@ def test_version_prints_and_exits_zero(capsys):
     assert "pdf2audio" in capsys.readouterr().out
 
 
-def test_run_dry_run_lists_documents_without_processing(tmp_path, monkeypatch, capsys, has_ffmpeg):
+def test_run_dry_run_lists_without_processing_and_needs_no_ffmpeg(tmp_path, monkeypatch, capsys):
     source = tmp_path / "books"
     source.mkdir()
     (source / "a.pdf").touch()
     cfg = _write_config(tmp_path, source)
 
+    # A dry run must work even with ffmpeg absent, and must not create the output dir.
+    monkeypatch.setattr(cli.shutil, "which", lambda _name: None)
     called: list = []
     monkeypatch.setattr(pipeline, "process_document", lambda *a, **k: called.append(a))
 
@@ -55,6 +57,7 @@ def test_run_dry_run_lists_documents_without_processing(tmp_path, monkeypatch, c
 
     assert called == []  # dry run must not process
     assert "a.pdf" in capsys.readouterr().out  # the result is on stdout
+    assert not (tmp_path / "audio").exists()  # no side effects
 
 
 def test_run_processes_each_document(tmp_path, monkeypatch, has_ffmpeg):
@@ -124,3 +127,19 @@ def test_log_level_flag_sets_level(tmp_path, monkeypatch, has_ffmpeg):
 
     cli.main(["run", "--dry-run", "--log-level", "DEBUG", "--config", str(cfg)])
     assert logging.getLogger("pdf2audio").level == logging.DEBUG
+
+
+def test_oserror_from_core_exits_1_without_traceback(tmp_path, monkeypatch, has_ffmpeg):
+    source = tmp_path / "books"
+    source.mkdir()
+    (source / "a.pdf").touch()
+    cfg = _write_config(tmp_path, source)
+
+    def _raise_oserror(doc, config):
+        raise OSError("disk went away")
+
+    monkeypatch.setattr(pipeline, "process_document", _raise_oserror)
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["run", "--config", str(cfg)])
+    assert exc.value.code == 1  # clean exit, not an uncaught traceback

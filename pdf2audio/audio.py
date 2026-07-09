@@ -174,10 +174,17 @@ class AudioEngine:
             temp_final.replace(final_path)  # atomic publish
             published = True
             logger.info(f"Exported audio to: {final_path}")
-        except OSError as exc:
+        except (OSError, sf.LibsndfileError) as exc:
+            # LibsndfileError subclasses RuntimeError, not OSError — catch it too so a write
+            # failure surfaces as AudioError (which callers handle) rather than a raw error.
             raise AudioError(f"Failed to write audio {final_path}: {exc}") from exc
         finally:
             if writer is not None:
-                writer.close()
+                # Best-effort close during cleanup; never let a close error mask the real
+                # exception or skip the temp-file unlink below.
+                try:
+                    writer.close()
+                except Exception as close_exc:
+                    logger.debug(f"Ignoring error closing audio writer: {close_exc}")
             if not published:
                 temp_final.unlink(missing_ok=True)

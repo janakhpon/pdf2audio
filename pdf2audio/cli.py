@@ -76,20 +76,20 @@ def _warn_low_disk(config: Config) -> None:
 
 
 def _cmd_run(args: argparse.Namespace) -> None:
-    _require_ffmpeg()
     config = _load(args)
-    config.out_audio_dir.mkdir(parents=True, exist_ok=True)
-
     doc_files = documents.discover_documents(config.source_path)
     if not doc_files:
         raise PDF2AudioError("No valid PDF, EPUB, or HTML directory found.")
 
     if args.dry_run:
+        # A dry run has no side effects and no prerequisites (no ffmpeg, no output dir).
         _log.info(f"Dry run: {len(doc_files)} document(s) would be processed.")
         for doc in doc_files:
             print(doc)  # the result goes to stdout
         return
 
+    _require_ffmpeg()  # needed for the final merge step
+    config.out_audio_dir.mkdir(parents=True, exist_ok=True)
     _warn_low_disk(config)
     _log.info(f"Discovered {len(doc_files)} document(s).")
     for doc in doc_files:
@@ -125,6 +125,10 @@ def main(argv: list[str] | None = None) -> None:
         _COMMANDS[args.command](args)
     except PDF2AudioError as exc:
         _log.error(str(exc))
+        sys.exit(1)
+    except OSError as exc:
+        # e.g. output dir not writable, disk error — report cleanly, don't dump a traceback.
+        _log.error(f"I/O error: {exc}")
         sys.exit(1)
     except KeyboardInterrupt:
         _log.warning("Interrupted. Progress is saved; re-run to resume where it stopped.")
