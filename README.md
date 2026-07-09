@@ -124,6 +124,6 @@ gate on every push and pull request.
 ## Documentation
 
 - [Architecture](docs/architecture.md) — pipeline design, concurrency model, and module breakdown
-- [Audit](docs/AUDIT.md) — correctness/safety audit, and [ADR 0001](docs/adr/0001-audit-hardening.md) for those decisions
+- [Audit](docs/audit.md) — correctness/safety audit, and [ADR 0001](docs/adr/0001-audit-hardening.md) for those decisions
 - [Staff audit](docs/staff-audit.md) — the craftsmanship review, and [ADR 0002](docs/adr/0002-staff-refactor.md) for the refactor decisions
 - [Voices & Languages](docs/voices.md) — all supported voices, languages, and speed tuning

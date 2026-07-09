@@ -5,7 +5,7 @@
 - **Context source:** Comprehensive audit against the internal engineering standards
   (`python`, `cli-design`, `ai-orchestration`, `concurrency-patterns`, `testing`,
   `observability`, `documentation`). Full finding-by-finding mapping is in
-  [`docs/AUDIT.md`](../AUDIT.md).
+  [`docs/audit.md`](../audit.md).
 
 ## Context
 
@@ -65,6 +65,6 @@ warranted an explicit hardening pass before further feature work.
 - Concurrent DB access is race-free; shutdown never orphans a chunk.
 - `uv run ruff check . && uv run ruff format --check . && uv run mypy src && uv run pytest`
   is the single quality gate, enforced in CI.
-- Not addressed here (logged as backlog in `docs/AUDIT.md`): streaming PDF extraction to cap
+- Not addressed here (logged as backlog in `docs/audit.md`): streaming PDF extraction to cap
   peak memory (a `docling` limitation), streaming audio samples to disk instead of buffering
   per chunk, and structured/JSON logging with per-stage timings.

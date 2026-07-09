@@ -67,4 +67,4 @@ incrementally (one item per commit, tests green throughout — no big-bang).
   flip adds noise around the untyped third-party libs (kokoro/docling/soundfile/nltk/bs4) for
   little gain. Kept as ADR 0001 chose.
 - **Streaming PDF extraction** — still bounded by `docling` loading the whole document; noted in
-  `docs/AUDIT.md` backlog.
+  `docs/audit.md` backlog.
