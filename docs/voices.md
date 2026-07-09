@@ -66,3 +66,8 @@ The LLM editor is already instructed to preserve the source language — no conf
 - **Speed `1.1–1.2`** — slightly faster narration, good for dense technical books
 - **Speed `0.9`** — slower pace, better for complex concepts or language learners
 - Voice quality is identical regardless of speed setting
+
+## See also
+
+- [README](../README.md) — installation and usage
+- [Architecture](architecture.md) — how the editor preserves the source language

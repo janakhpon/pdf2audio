@@ -95,3 +95,10 @@ All modules use the shared `logger` from `pdf2audio/logger.py`, which writes tim
 `level + message` lines to **stderr** (stdout is reserved for CLI results). Verbosity is set
 with `--log-level {DEBUG,INFO,WARNING,ERROR}`. Structured JSON logging is intentionally out of
 scope for an offline single-process tool (see ADR 0002).
+
+## See also
+
+- [Audit](audit.md) + [ADR 0001](adr/0001-audit-hardening.md) — the correctness/safety pass
+- [Staff audit](staff-audit.md) + [ADR 0002](adr/0002-staff-refactor.md) — the craftsmanship
+  refactor that shaped this module layout
+- [Voices & languages](voices.md) — voice IDs and the language setting
