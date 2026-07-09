@@ -56,7 +56,7 @@ def document_hash(doc_path: Path, config: Config) -> str:
     Uses MD5 purely as a fast cache key — not for security. For an HTML directory the
     filenames + mtimes stand in for content so a large book isn't fully re-read each run.
     """
-    hasher = hashlib.md5()
+    hasher = hashlib.md5(usedforsecurity=False)  # a cache key, not a security digest
     config_state = (
         f"{config.audio_voice}_{config.audio_speed}_{config.editor_model}_"
         f"{config.editor_mode}_{config.editor_enabled}"
