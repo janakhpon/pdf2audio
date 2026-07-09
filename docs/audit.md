@@ -7,6 +7,14 @@
 findings below, then fixes applied and verified. Each finding is mapped to the internal
 engineering standard it relates to, a severity, and a status.
 
+> **Later context.** This is the record of the correctness/safety pass. A subsequent
+> craftsmanship refactor ([staff audit](staff-audit.md), [ADR 0002](adr/0002-staff-refactor.md))
+> reorganized the package, so some paths below have since moved: the code now lives in
+> `pdf2audio/` (not `src/`), and the 297-line `__main__` was split into `pipeline.py`, `state.py`
+> (`ChunkStateStore` replaced the inline `db_write`/`db_query` helpers), and `documents.py`.
+> Findings are preserved as they read at audit time; a few backlog items have since been done
+> (marked below).
+
 ## Scope & method
 
 Standards applied (internal `se-brain` ruleset):
@@ -77,15 +85,17 @@ polish/hygiene. Status: **Fixed** · **Deferred** (logged in backlog) · **Won't
 
 ## Deferred backlog
 
-- **Streaming PDF extraction** to cap peak memory (blocked by `docling` loading the full
-  document; would need a page-range or streaming API).
-- **Stream audio samples to disk** instead of buffering all chunk samples in memory before
-  a single `soundfile.write`.
-- **LLM traceability**: per-request IDs and structured per-stage latency logging
-  (ai-orchestration / observability).
-- **Structured (JSON) logging** with a `--log-level` flag.
-- **Integration test** of the full `process_single_document` resume path (currently the DB
-  state contract is unit-tested in isolation).
+Status updated after the ADR 0002 refactor:
+
+- **Streaming PDF extraction** to cap peak memory — still deferred (blocked by `docling`
+  loading the full document; would need a page-range or streaming API).
+- ~~**Stream audio samples to disk**~~ — **done** (ADR 0002): audio now streams each segment
+  into a `soundfile` writer instead of buffering all samples.
+- **LLM traceability**: per-request IDs and structured per-stage latency logging — still deferred.
+- **Structured (JSON) logging** — the `--log-level` flag is **done** (ADR 0002); JSON output
+  itself stays deferred as over-engineering for an offline tool.
+- ~~**Integration test** of the full resume path~~ — **done**: `tests/test_pipeline.py` drives
+  the real `process_document` (heavy deps mocked), covering resume, per-chunk failure, and low-disk.
 
 ## Verification
 
