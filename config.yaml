@@ -5,17 +5,17 @@ source:
   # Path can be a single file, a directory, or an array of specific files.
   # Examples:
   # path: "books/"
-  # path: "books/gold-rush.pdf"
+  path: "books/kumar-aws-system-design-enterprise-solutions-2025.pdf"
   # path:
   #   - "books/part1.pdf"
   #   - "books/part2.pdf"
-  path: "/Users/zinmin/Downloads/system-design-interview-bytebytego"
+  # path: "/Users/zinmin/Downloads/system-design-interview-bytebytego"
   chunk_size: 6           # HTML: number of files per chunk. PDF: markdown block groups × 10.
 
 # Transcription and Smart Editor settings
 editor:
   enabled: true          # Set to false to bypass transcription and Ollama completely
-  model: "qwen2.5"       # Name of the local Ollama model to use for the Smart Editor
+  model: "gemma3:27b"    # Local Ollama model for the Smart Editor (see README for other options)
   mode: "full"            # Options: "short" (summarize), "medium" (summarize), "full" (clean formatting only)
   preserve_context: true  # Dynamically passes the summary of the previous chunk into the next chunk to guarantee coherent narrative flow across 1,000+ page books
   url: "http://localhost:11434"

@@ -22,7 +22,7 @@ _VALID_BODY = """\
       chunk_size: 5
     editor:
       enabled: false
-      model: llama3.2
+      model: gemma3:27b
       mode: full
       preserve_context: true
       url: http://localhost:11434

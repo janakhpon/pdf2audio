@@ -19,7 +19,7 @@ def _make_config(tmp_path, **overrides) -> Config:
         source_path=tmp_path,
         chunk_size=5,
         editor_enabled=False,
-        editor_model="llama3.2",
+        editor_model="gemma3:27b",
         editor_mode="full",
         editor_preserve_context=True,
         editor_url="http://localhost:11434",
