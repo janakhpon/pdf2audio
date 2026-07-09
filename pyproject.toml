@@ -77,3 +77,6 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+markers = [
+    "e2e: real end-to-end test using the actual kokoro model + ffmpeg; auto-skips when absent",
+]
