@@ -38,7 +38,7 @@ def _config(tmp_path: Path, source: Path, **overrides) -> Config:
         source_path=source,
         chunk_size=1,
         editor_enabled=False,  # no Ollama dependency in the smoke test
-        editor_model="llama3.2",
+        editor_model="gemma3:27b",
         editor_mode="full",
         editor_preserve_context=True,
         editor_url="http://localhost:11434",
