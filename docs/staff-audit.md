@@ -57,4 +57,4 @@ refactor removed accidental complexity (a god module, duplicated logic, a fake p
 than adding cleverness, and every change is behavior-preserving and covered by tests. Remaining
 items are intentionally deferred as over-engineering for an offline tool (JSON logging, metrics,
 `--strict` mypy) or blocked by a dependency (streaming PDF extraction) — all recorded in ADR
-0002 and `docs/AUDIT.md`.
+0002 and `docs/audit.md`.
