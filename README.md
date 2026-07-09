@@ -52,28 +52,37 @@ curl -sL https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-fil
 
 ## Usage
 
-All settings are in `config.yaml`:
+Everything is driven by `config.yaml`. A minimal config:
 
-1. Set `source.path` to your file or folder
-2. Choose a voice and speed under `audio`
-3. (Optional) Enable the `editor` block with an Ollama model for LLM polishing — makes a significant difference on PDFs with raw OCR artifacts
-
-```bash
-# Preview the configured TTS voice
-uv run pdf2audio preview
-
-# Run the full pipeline
-uv run pdf2audio run
-
-# See what would be processed, without running
-uv run pdf2audio run --dry-run
-
-# Manually merge chunks (if a previous run was interrupted)
-uv run pdf2audio merge
+```yaml
+source:
+  path: "books/my-book.pdf" # a single file, a folder of PDFs/EPUBs, or a folder of HTML
+audio:
+  voice: "af_heart" # see docs/voices.md for the full list
+  format: "mp3" # mp3 | m4a | wav
+editor:
+  enabled: false # true = polish the text with a local Ollama model first (optional)
 ```
 
+Then, from the project directory:
+
+```bash
+uv run pdf2audio preview       # hear the configured voice — a ~3s sample
+uv run pdf2audio run --dry-run # list the documents that would be processed; makes no changes
+uv run pdf2audio run           # the full pipeline: extract → (polish) → synthesize → merge
+```
+
+The finished audiobook is written to **`output/audio/<name>_full.<format>`**, with the
+per-chapter audio chunks and transcripts kept alongside it under `output/`.
+
+**If a run is interrupted**, just run it again — every chunk's state is tracked in SQLite, so it
+resumes where it stopped and never re-synthesizes finished audio. If a run was cut off after the
+audio was made but before the final file was assembled, `uv run pdf2audio merge` stitches the
+chunks together.
+
 Global flags: `--config PATH` (default `config.yaml`) and `--log-level {DEBUG,INFO,WARNING,ERROR}`.
-`pdf2audio --help` lists everything. (`python -m pdf2audio` also works.)
+Run `pdf2audio --help`, or `pdf2audio <command> --help`, for the full surface. (`python -m pdf2audio`
+works too.)
 
 ## Recommended Models for Transcript Polishing
 
@@ -118,8 +127,17 @@ uv run mypy pdf2audio
 uv run pytest
 ```
 
-The test suite is fully offline (all heavy dependencies are mocked). CI runs the same
-gate on every push and pull request.
+`pytest` runs the offline suite — the heavy dependencies (kokoro, docling, Ollama, ffmpeg) are
+mocked, so it needs no models or network and CI runs the same gate on every push and pull request.
+
+There is also an opt-in **end-to-end smoke test** that drives the *real* model and ffmpeg:
+
+```bash
+uv run pytest -m e2e   # needs assets/models/ + ffmpeg; auto-skips if absent
+```
+
+Run it locally after changing anything in `audio.py`, `pipeline.py`, or `merge.py` — it's the
+check that proves a real audiobook still comes out end to end.
 
 ## Documentation
 
