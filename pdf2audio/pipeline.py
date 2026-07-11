@@ -64,6 +64,11 @@ def process_document(doc_path: Path, config: Config) -> None:
     editor = SmartEditor(config)
     audio_engine = AudioEngine(config)
 
+    # Validate the editor before the (slow) extraction so a down/misconfigured Ollama surfaces
+    # immediately instead of after a multi-minute PDF conversion. Degrades, never crashes.
+    if config.editor_enabled and not editor.ensure_ready():
+        logger.warning("Editor unavailable; this book will be narrated from unpolished text.")
+
     book_audio_dir = config.out_audio_dir / doc_path.stem
     book_transcripts_dir = config.out_transcripts_dir / doc_path.stem
     book_audio_dir.mkdir(parents=True, exist_ok=True)
@@ -71,6 +76,7 @@ def process_document(doc_path: Path, config: Config) -> None:
         book_transcripts_dir.mkdir(parents=True, exist_ok=True)
 
     chunks_processed = 0
+    degraded_chunks = 0
     halted_low_disk = False
     job_queue: queue.Queue = queue.Queue(maxsize=_QUEUE_MAXSIZE)
 
@@ -146,6 +152,8 @@ def process_document(doc_path: Path, config: Config) -> None:
                 try:
                     store.mark(doc_hash, chunks_processed, ChunkStatus.PROCESSING)
                     polished_text = editor.process_transcript(raw_text)
+                    if editor.last_degraded:
+                        degraded_chunks += 1
                     clean_text = sanitize_for_tts(polished_text)
                     if config.save_transcripts:
                         transcript_out.write_text(clean_text, encoding="utf-8")
@@ -166,6 +174,12 @@ def process_document(doc_path: Path, config: Config) -> None:
         if chunks_processed == 0:
             logger.error(f"Failed to extract text from {doc_path.name}.")
             return
+
+        if degraded_chunks:
+            logger.warning(
+                f"{degraded_chunks} of {chunks_processed} chunk(s) were narrated from UNPOLISHED "
+                f"text because the editor was unavailable. Fix Ollama and re-run to re-polish them."
+            )
 
         pending = store.pending_count(doc_hash)
         if pending == 0:

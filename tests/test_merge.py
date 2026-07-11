@@ -7,6 +7,7 @@ import subprocess
 
 import pytest
 from pdf2audio import merge as merge_mod
+from pdf2audio.errors import MergeError
 from pdf2audio.merge import merge_audio
 
 
@@ -29,13 +30,15 @@ def spy_subprocess(monkeypatch):
     return calls
 
 
-def test_missing_directory_returns_without_ffmpeg(tmp_path, spy_subprocess):
-    merge_audio(str(tmp_path / "no_such_dir"), "mp3", valid_files=["a.wav"])
+def test_missing_directory_raises_without_ffmpeg(tmp_path, spy_subprocess):
+    with pytest.raises(MergeError):
+        merge_audio(str(tmp_path / "no_such_dir"), "mp3", valid_files=["a.wav"])
     assert spy_subprocess == []  # ffmpeg was never invoked
 
 
-def test_no_files_returns_without_ffmpeg(tmp_path, spy_subprocess):
-    merge_audio(str(tmp_path), "mp3", valid_files=[])
+def test_no_files_raises_without_ffmpeg(tmp_path, spy_subprocess):
+    with pytest.raises(MergeError):
+        merge_audio(str(tmp_path), "mp3", valid_files=[])
     assert spy_subprocess == []
 
 
@@ -82,8 +85,9 @@ def test_concat_list_cleaned_up_on_ffmpeg_failure(tmp_path, monkeypatch):
         subprocess, "run", lambda command, **kwargs: _FakeCompleted(returncode=1, stderr="boom")
     )
 
-    merge_audio(str(book_dir), "mp3", valid_files=[str(f)])
-    assert not (book_dir / "concat_list.txt").exists()
+    with pytest.raises(MergeError, match="ffmpeg merge failed"):
+        merge_audio(str(book_dir), "mp3", valid_files=[str(f)])
+    assert not (book_dir / "concat_list.txt").exists()  # cleaned up despite the failure
 
 
 def test_concat_list_cleaned_up_on_subprocess_error(tmp_path, monkeypatch):
@@ -97,7 +101,8 @@ def test_concat_list_cleaned_up_on_subprocess_error(tmp_path, monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", raising_run)
 
-    merge_audio(str(book_dir), "mp3", valid_files=[str(f)])
+    with pytest.raises(MergeError):
+        merge_audio(str(book_dir), "mp3", valid_files=[str(f)])
     assert not (book_dir / "concat_list.txt").exists()
 
 
@@ -147,3 +152,23 @@ def test_m4a_uses_aac_codec(tmp_path, monkeypatch):
 def test_merge_module_importable_without_running_ffmpeg():
     # Sanity: the module exposes merge_audio and did not attempt any I/O on import.
     assert callable(merge_mod.merge_audio)
+
+
+def test_merge_all_raises_when_a_document_fails(tmp_path, monkeypatch):
+    # A failed per-document merge must surface as MergeError so `pdf2audio merge` exits non-zero
+    # instead of falsely reporting success.
+    book_dir = tmp_path / "book"
+    book_dir.mkdir()
+
+    monkeypatch.setattr(merge_mod.documents, "discover_documents", lambda src: [tmp_path / "book"])
+    monkeypatch.setattr(
+        merge_mod, "merge_audio", lambda *a, **k: (_ for _ in ()).throw(MergeError("ffmpeg died"))
+    )
+
+    class _Cfg:
+        source_path = tmp_path
+        out_audio_dir = tmp_path
+        audio_format = "mp3"
+
+    with pytest.raises(MergeError, match="failed to merge"):
+        merge_mod.merge_all(_Cfg())
