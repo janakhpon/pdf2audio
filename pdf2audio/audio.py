@@ -1,3 +1,5 @@
+"""Kokoro ONNX text-to-speech: text chunking, streaming synthesis, and atomic wav output."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -62,11 +64,9 @@ class AudioEngine:
     def kokoro(self) -> Kokoro:
         if self._kokoro is None:
             logger.info(f"Loading TTS (Model: {self.config.audio_model_path})")
-            # kokoro-onnx does not expose ONNX SessionOptions at construction; it uses the
-            # runtime's default thread count.
+            # kokoro-onnx does not expose ONNX SessionOptions at construction, so it uses the
+            # runtime's default thread count; pin the provider to CPU to avoid a GPU fallback.
             self._kokoro = Kokoro(self.config.audio_model_path, self.config.audio_voices_path)
-            # Kokoro-ONNX does not expose SessionOptions at construction time.
-            # Provider pinned to CPU to avoid unexpected GPU fallback.
             self._kokoro.sess.set_providers(["CPUExecutionProvider"])
 
         return self._kokoro
