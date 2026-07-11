@@ -24,11 +24,13 @@ also surfaced correctness gaps around merging, TTS language, and config bounds.
    order of magnitude slower. Pick the largest model that comfortably fits, not the largest that
    loads. The README documents the rule and lists RAM-sized options.
 
-2. **Tune the Ollama request.** Set `keep_alive` so the model stays resident between chunks; size
-   `num_ctx` per prompt (Ollama's ~2048 default silently truncated multi-KB chunks and dropped
-   source content); use a low temperature for faithful rewrites; retry a timed-out call at most
-   once (an identical retry just times out again); and warn on `done_reason == "length"` or an
-   oversized prompt so truncation is visible.
+2. **Tune the Ollama request.** Set `keep_alive` so the model stays resident between chunks; set a
+   `num_ctx` large enough for a chunk plus its rewrite (Ollama's small default silently truncated
+   multi-KB chunks and dropped source content) and hold it **constant for the whole run** —
+   Ollama reloads the model (~seconds) whenever `num_ctx` changes, so a per-chunk value would
+   fight `keep_alive` and discard the cached prompt prefix; size it once from `chunk_size`. Use a
+   low temperature for faithful rewrites; retry a timed-out call at most once (an identical retry
+   just times out again); warn on `done_reason == "length"` or a prompt that overflows the window.
 
 3. **Make `full` mode faithful narration.** `full` is a verbatim rewrite, not a summary. The prompt
    now narrates tables of contents, code, and lists as flowing prose instead of numbered

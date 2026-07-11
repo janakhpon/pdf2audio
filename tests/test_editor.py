@@ -9,7 +9,12 @@ from pathlib import Path
 
 import pytest
 from pdf2audio.config import Config
-from pdf2audio.editor import _MAX_NUM_CTX, _MIN_NUM_CTX, SmartEditor, _num_ctx_for
+from pdf2audio.editor import (
+    _MAX_NUM_CTX,
+    _MIN_NUM_CTX,
+    SmartEditor,
+    _num_ctx_for_chunk_size,
+)
 from pdf2audio.errors import EditorError
 
 
@@ -271,20 +276,37 @@ def test_process_transcript_strips_preamble_from_model_output(monkeypatch):
     assert editor.process_transcript("raw") == "The real narration."
 
 
-# --------------------------------------------------------------------------- _num_ctx_for
+# --------------------------------------------------------------------------- num_ctx (per run)
 
 
-def test_num_ctx_scales_with_prompt_and_is_power_of_two():
-    small = _num_ctx_for(100)
-    large = _num_ctx_for(40_000)
-    assert small == _MIN_NUM_CTX  # tiny prompt floored to the minimum
+def test_num_ctx_scales_with_chunk_size_and_is_power_of_two():
+    small = _num_ctx_for_chunk_size(1)
+    large = _num_ctx_for_chunk_size(30)
+    assert small == _MIN_NUM_CTX  # tiny chunk floored to the minimum
     assert large > small
     assert large & (large - 1) == 0  # power of two
+    assert _num_ctx_for_chunk_size(6) == 8192  # the default lands on the smoke-tested window
 
 
 def test_num_ctx_clamped_to_bounds():
-    assert _num_ctx_for(0) == _MIN_NUM_CTX
-    assert _num_ctx_for(10_000_000) == _MAX_NUM_CTX  # pathological chunk capped
+    assert _num_ctx_for_chunk_size(1) == _MIN_NUM_CTX
+    assert _num_ctx_for_chunk_size(10_000) == _MAX_NUM_CTX  # huge chunk_size capped
+
+
+def test_num_ctx_is_constant_across_chunks(monkeypatch):
+    # num_ctx must not change between calls, or Ollama reloads the model each time.
+    editor = SmartEditor(make_config(editor_enabled=True))
+    editor._validated = True
+    seen = []
+
+    def fake_urlopen(req, timeout=None):
+        seen.append(json.loads(req.data.decode("utf-8"))["options"]["num_ctx"])
+        return _FakeResponse({"message": {"content": "ok."}})
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    editor.process_transcript("a short chunk")
+    editor.process_transcript("a much, much longer chunk " * 200)
+    assert seen[0] == seen[1] == editor.num_ctx  # same window regardless of chunk size
 
 
 def test_payload_sets_keep_alive_and_context_window(monkeypatch):

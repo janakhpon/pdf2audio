@@ -19,17 +19,21 @@ _MIN_NUM_CTX = 4096
 _MAX_NUM_CTX = 32768  # bound the KV cache so a huge chunk can't blow up memory
 
 
-def _num_ctx_for(prompt_chars: int) -> int:
-    """Pick an Ollama context window that holds the whole prompt plus room for the rewrite.
+def _num_ctx_for_chunk_size(chunk_size: int) -> int:
+    """Pick one context window for the whole run, sized to hold a chunk plus its rewrite.
 
-    Ollama's default num_ctx (~2048 tokens) would silently truncate our multi-KB chunk
-    prompts, dropping source content. Estimate tokens at ~4 chars/token, double it so a
-    full-mode rewrite (roughly as long as its input) also fits, add a small buffer, round up
-    to a power of two, and clamp so a pathological chunk can't allocate an unbounded KV cache.
+    Ollama's default num_ctx (~2-4k tokens) would silently truncate our multi-KB chunk prompts
+    and drop source content. But num_ctx must stay CONSTANT across calls: Ollama reloads the
+    model (~seconds) whenever it changes, which would fight keep_alive and discard the cached
+    system-prompt prefix. So size it once from chunk_size rather than per-chunk.
+
+    Budget generously — roughly 900 tokens per chunk_size unit (the chunk plus its full-mode
+    rewrite) plus ~2000 fixed for the system prompt and context slice — then round up to a power
+    of two for headroom and clamp. At the default chunk_size=6 this lands on 8192, the window the
+    smoke tests ran cleanly on; larger chunk sizes scale up.
     """
-    approx_tokens = prompt_chars // 4
-    needed = approx_tokens * 2 + 512
-    ctx = 1 << max(1, needed - 1).bit_length()  # next power of two >= needed
+    est_tokens = chunk_size * 900 + 2000
+    ctx = 1 << max(1, est_tokens - 1).bit_length()  # next power of two >= est_tokens
     return min(max(ctx, _MIN_NUM_CTX), _MAX_NUM_CTX)
 
 
@@ -82,6 +86,9 @@ class SmartEditor:
         self.enabled = config.editor_enabled
         self.preserve_context = config.editor_preserve_context
         self.timeout = config.editor_timeout
+        # One context window for the whole run — kept constant so Ollama never reloads the model
+        # between chunks (a changing num_ctx forces a ~seconds reload; see _num_ctx_for_chunk_size).
+        self.num_ctx = _num_ctx_for_chunk_size(config.chunk_size)
         self._previous_context: str | None = None
         self._validated = False
         # Degradation tracking: last_degraded reflects whether the most recent chunk was left
@@ -204,14 +211,14 @@ class SmartEditor:
         # cannot override the instructions (se-brain ai-orchestration: input boundaries).
         system_content = self._build_prompt()
         user_content = f"{context_block}TEXT TO PROCESS:\n{text}"
-        # Ollama defaults num_ctx to a small window (~2048) that silently truncates our multi-KB
-        # chunk prompts and drops source content — fatal for full mode's "preserve every concept".
-        prompt_chars = len(system_content) + len(user_content)
-        num_ctx = _num_ctx_for(prompt_chars)
-        if num_ctx >= _MAX_NUM_CTX and (prompt_chars // 4) * 2 + 512 > _MAX_NUM_CTX:
+        # num_ctx is fixed for the run. If a chunk's prompt alone overflows it, Ollama truncates
+        # the prompt (silent source loss), so warn; output-side truncation is caught separately
+        # via done_reason below.
+        prompt_tokens = (len(system_content) + len(user_content)) // 4
+        if prompt_tokens > self.num_ctx:
             logger.warning(
-                f"Chunk prompt (~{prompt_chars // 4} tokens) may exceed the max context window "
-                f"({_MAX_NUM_CTX}); the tail could be truncated. Reduce chunk_size in config."
+                f"Chunk prompt (~{prompt_tokens} tokens) exceeds the context window "
+                f"({self.num_ctx}); its tail will be truncated. Lower chunk_size in config."
             )
         payload = {
             "model": self.model,
@@ -224,7 +231,7 @@ class SmartEditor:
             # reloaded (~20s) whenever the TTS queue backs up the main thread.
             "keep_alive": _KEEP_ALIVE,
             "options": {
-                "num_ctx": num_ctx,
+                "num_ctx": self.num_ctx,
                 # Low temperature keeps the rewrite faithful and on-task rather than embellishing.
                 "temperature": _TEMPERATURE,
             },
