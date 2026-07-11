@@ -16,6 +16,11 @@ Convert PDFs, EPUBs, and HTML books into audiobooks — offline, on your own har
 Document → Extract text → LLM polish (optional) → TTS synthesis → Merge to MP3
 ```
 
+The optional Smart Editor rewrites each chunk into clean spoken narration — dropping page numbers,
+figure/table references, and layout artifacts that only make sense on a page — while preserving the
+meaning. If it is unavailable or would drop content, the pipeline narrates the complete extracted
+text instead, so nothing meaningful is lost.
+
 - **Local** — no cloud APIs; text and audio stay on your machine (see the first-run note below)
 - **Resumable** — SQLite tracks every chunk; kill it anytime and re-run to continue
 - **Streaming** — extraction yields chunk-by-chunk, so EPUB/HTML books are processed incrementally rather than all at once. Note: PDF extraction loads the whole document into memory (a `docling` limitation), so peak memory scales with the size of a single PDF
@@ -63,6 +68,9 @@ audio:
 editor:
   enabled: false # true = polish the text with a local Ollama model first (optional)
 ```
+
+The editor is optional — with it off, the extracted text is narrated directly. The bundled
+`config.yaml` enables it with `qwen2.5:14b`; see the model guidance below.
 
 Then, from the project directory:
 
