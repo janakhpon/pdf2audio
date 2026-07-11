@@ -89,8 +89,10 @@ def load_config(config_path: str | Path | None = None) -> Config:
         audio_speed = float(data.get("audio", {}).get("speed", 1.0))
     except (TypeError, ValueError) as exc:
         raise ConfigError(f"audio.speed must be a number: {exc}") from exc
-    if not 0.5 <= audio_speed <= 3.0:
-        raise ConfigError(f"audio.speed must be between 0.5 and 3.0, got {audio_speed}")
+    if not 0.5 <= audio_speed <= 2.0:
+        # kokoro-onnx asserts 0.5 <= speed <= 2.0; a higher value would fail every chunk at
+        # synthesis time, so reject it here with a clear message instead.
+        raise ConfigError(f"audio.speed must be between 0.5 and 2.0, got {audio_speed}")
 
     editor_url = os.getenv(
         "OLLAMA_URL", data.get("editor", {}).get("url", "http://localhost:11434")
