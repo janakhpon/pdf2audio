@@ -92,6 +92,8 @@ Status updated after the ADR 0002 refactor:
 - ~~**Stream audio samples to disk**~~ — **done** (ADR 0002): audio now streams each segment
   into a `soundfile` writer instead of buffering all samples.
 - **LLM traceability**: per-request IDs and structured per-stage latency logging — still deferred.
+  (ADR 0003 later surfaced `done_reason` truncation warnings and cut the timeout-retry storm in
+  finding A3 from three attempts to one; full trace IDs / latency logging remain deferred.)
 - **Structured (JSON) logging** — the `--log-level` flag is **done** (ADR 0002); JSON output
   itself stays deferred as over-engineering for an offline tool.
 - ~~**Integration test** of the full resume path~~ — **done**: `tests/test_pipeline.py` drives
