@@ -19,6 +19,20 @@ if TYPE_CHECKING:
 # Reject implausibly large inputs early rather than OOM-ing deep inside docling/ebooklib.
 _MAX_FILE_BYTES = 500 * 1024 * 1024  # 500 MB
 
+# Tags to drop before reading text. Loose HTML files carry site chrome, so strip broadly; EPUB
+# chapter bodies are already just the chapter, so strip only what is never reading content (a
+# chapter's <header>/<aside> can hold its title or a pull-quote, so those are kept for EPUBs).
+_HTML_DIR_DROP_TAGS = ["nav", "header", "footer", "script", "style", "aside", "noscript", "form"]
+_EPUB_DROP_TAGS = ["script", "style", "noscript"]
+
+
+def _soup_to_text(content: str | bytes, drop_tags: list[str]) -> str:
+    """Parse HTML, remove non-content tags, and return whitespace-joined visible text."""
+    soup = BeautifulSoup(content, "html.parser")
+    for tag in soup(drop_tags):
+        tag.decompose()
+    return soup.get_text(separator=" ", strip=True)
+
 
 class DocumentExtractor:
     def __init__(self, chunk_size: int = 5) -> None:
@@ -109,13 +123,31 @@ class DocumentExtractor:
         current_chunk: list[str] = []
         count = 0
 
+        def documents_in_reading_order() -> Iterator[epub.EpubHtml]:
+            # The spine is the reading order; book.get_items() is manifest order and can scramble
+            # chapters. EpubNav (the table of contents) and EpubCoverHtml both report ITEM_DOCUMENT,
+            # so skip them explicitly — they are navigation/cover, not reading content.
+            yielded = False
+            for idref, _linear in book.spine:
+                item = book.get_item_with_id(idref)
+                if item is None or item.get_type() != ebooklib.ITEM_DOCUMENT:
+                    continue
+                if isinstance(item, (epub.EpubNav, epub.EpubCoverHtml)):
+                    continue
+                yielded = True
+                yield item
+            if not yielded:
+                # Empty or unreadable spine: fall back to manifest order so nothing is lost.
+                logger.warning("EPUB spine empty/unreadable; falling back to manifest order.")
+                for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+                    if not isinstance(item, (epub.EpubNav, epub.EpubCoverHtml)):
+                        yield item
+
         def extract_epub_text() -> Iterator[str]:
-            for item in book.get_items():
-                if item.get_type() == ebooklib.ITEM_DOCUMENT:
-                    soup = BeautifulSoup(item.get_body_content(), "html.parser")
-                    text = soup.get_text(separator=" ", strip=True)
-                    if text:
-                        yield text
+            for item in documents_in_reading_order():
+                text = _soup_to_text(item.get_body_content(), _EPUB_DROP_TAGS)
+                if text:
+                    yield text
 
         for chapter_idx, chapter_text in enumerate(extract_epub_text(), start=1):
             current_chunk.append(self._clean_text(chapter_text))
@@ -145,26 +177,9 @@ class DocumentExtractor:
             for i, html_file in enumerate(html_files):
                 logger.debug(f"  Reading [{i + 1}/{len(html_files)}]: {html_file.name}")
                 with open(html_file, encoding="utf-8", errors="replace") as f:
-                    soup = BeautifulSoup(f.read(), "html.parser")
-
-                    # Strip non-content elements.
-                    for tag in soup(
-                        [
-                            "nav",
-                            "header",
-                            "footer",
-                            "script",
-                            "style",
-                            "aside",
-                            "noscript",
-                            "form",
-                        ]
-                    ):
-                        tag.decompose()
-
-                    text = soup.get_text(separator=" ", strip=True)
-                    if text:
-                        yield text
+                    text = _soup_to_text(f.read(), _HTML_DIR_DROP_TAGS)
+                if text:
+                    yield text
 
         for chapter_text in extract_html_text():
             file_idx += 1
