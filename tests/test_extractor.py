@@ -4,8 +4,31 @@ chunking), and the typed-error surface for bad inputs. No real PDF/EPUB/docling 
 from __future__ import annotations
 
 import pytest
+from ebooklib import epub
 from pdf2audio.errors import ExtractionError
 from pdf2audio.extractor import DocumentExtractor
+
+
+def _make_epub(path, *, spine, chapters, add_nav=True):
+    """Write a minimal real EPUB. `chapters` are (id, filename, body_html) added in that
+    (manifest) order; `spine` is a list of ids / the 'nav' token defining reading order."""
+    book = epub.EpubBook()
+    book.set_identifier("test-id")
+    book.set_title("Test Book")
+    book.set_language("en")
+    items = {}
+    for cid, fname, body in chapters:
+        item = epub.EpubHtml(uid=cid, file_name=fname, lang="en")
+        item.content = body
+        book.add_item(item)
+        items[cid] = item
+    book.add_item(epub.EpubNcx())
+    if add_nav:
+        book.add_item(epub.EpubNav())
+    book.spine = [items.get(s, s) for s in spine]
+    epub.write_epub(str(path), book)
+    return path
+
 
 # --------------------------------------------------------------------------- _clean_text
 
@@ -95,6 +118,51 @@ def test_dir_without_html_raises(tmp_path):
     (empty_dir / "notes.txt").write_text("hi", encoding="utf-8")
     with pytest.raises(ExtractionError, match="does not contain HTML"):
         list(DocumentExtractor().process_file(empty_dir))
+
+
+# --------------------------------------------------------------------------- EPUB path
+
+
+def test_epub_reads_in_spine_order_skips_nav_and_strips_style(tmp_path):
+    path = _make_epub(
+        tmp_path / "book.epub",
+        # manifest (add) order is c1 then c2 ...
+        chapters=[
+            (
+                "c1",
+                "c1.xhtml",
+                "<html><body><h1>Chapter One</h1><p>alpha content</p>"
+                "<style>.hidden{display:none}</style></body></html>",
+            ),
+            ("c2", "c2.xhtml", "<html><body><p>beta content</p></body></html>"),
+        ],
+        # ... but reading order (spine) is nav, then c2, then c1
+        spine=["nav", "c2", "c1"],
+    )
+    # chunk_size=1 -> one chunk per yielded document, so the count proves nav was excluded.
+    chunks = list(DocumentExtractor(chunk_size=1).process_file(path))
+
+    assert len(chunks) == 2  # only the two real chapters; nav document excluded
+    assert "beta content" in chunks[0]  # spine reading order (c2 first), not manifest order
+    assert "alpha content" in chunks[1]
+    assert "Chapter One" in chunks[1]  # a chapter <h1> heading is kept
+    assert "display:none" not in " ".join(chunks)  # <style> stripped, never narrated
+
+
+def test_epub_falls_back_to_manifest_order_when_spine_has_no_documents(tmp_path):
+    # Spine references only the nav; the real chapters live in the manifest only.
+    path = _make_epub(
+        tmp_path / "book.epub",
+        chapters=[
+            ("c1", "c1.xhtml", "<html><body><p>alpha content</p></body></html>"),
+            ("c2", "c2.xhtml", "<html><body><p>beta content</p></body></html>"),
+        ],
+        spine=["nav"],
+    )
+    chunks = list(DocumentExtractor(chunk_size=1).process_file(path))
+
+    assert len(chunks) == 2  # fell back to manifest documents, nav still excluded
+    assert "alpha content" in chunks[0] and "beta content" in chunks[1]  # manifest order
 
 
 # --------------------------------------------------------------------------- error surface
