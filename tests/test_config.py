@@ -134,14 +134,14 @@ def test_editor_timeout_non_positive_raises(tmp_path, bad):
         load_config(_write_config(tmp_path, body))
 
 
-@pytest.mark.parametrize("bad", [0.4, 0.49, 3.01, 5.0])
+@pytest.mark.parametrize("bad", [0.4, 0.49, 2.01, 3.0, 5.0])
 def test_audio_speed_out_of_range_raises(tmp_path, bad):
     body = _VALID_BODY.replace("speed: 1.0", f"speed: {bad}")
     with pytest.raises(ConfigError, match="audio.speed must be between"):
         load_config(_write_config(tmp_path, body))
 
 
-@pytest.mark.parametrize("ok", [0.5, 1.0, 2.0, 3.0])
+@pytest.mark.parametrize("ok", [0.5, 1.0, 1.5, 2.0])
 def test_audio_speed_within_range(tmp_path, ok):
     body = _VALID_BODY.replace("speed: 1.0", f"speed: {ok}")
     assert load_config(_write_config(tmp_path, body)).audio_speed == ok

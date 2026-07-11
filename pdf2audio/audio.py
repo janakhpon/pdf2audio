@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import nltk
@@ -13,6 +12,26 @@ from pdf2audio.errors import AudioError
 from pdf2audio.logger import logger
 
 _DEFAULT_SAMPLE_RATE = 24000  # kokoro's output rate; used only for the empty-output fallback
+
+# kokoro encodes the language in the first letter of the voice name; map it to the espeak
+# language code that kokoro-onnx feeds its g2p phonemizer. Passing the wrong lang phonemizes
+# e.g. a Japanese voice with English rules, producing garbled pronunciation.
+_VOICE_LANG = {
+    "a": "en-us",  # American English
+    "b": "en-gb",  # British English
+    "e": "es",  # Spanish
+    "f": "fr-fr",  # French
+    "h": "hi",  # Hindi
+    "i": "it",  # Italian
+    "j": "ja",  # Japanese
+    "p": "pt-br",  # Brazilian Portuguese
+    "z": "cmn",  # Mandarin Chinese
+}
+
+
+def _espeak_lang_for_voice(voice: str) -> str:
+    """Return the espeak language code for a kokoro voice name (default American English)."""
+    return _VOICE_LANG.get(voice[:1].lower(), "en-us") if voice else "en-us"
 
 
 class AudioEngine:
@@ -32,10 +51,6 @@ class AudioEngine:
                     "Download the kokoro-onnx model/voices into assets/models/."
                 )
 
-        # Optimal threads: 85% of available logical cores, minimum 1.
-        total_cores = os.cpu_count() or 2
-        self.optimal_threads = max(1, int(total_cores * 0.85))
-
         # Ensure the NLTK punkt model is available up front.
         try:
             nltk.data.find("tokenizers/punkt_tab")
@@ -46,12 +61,9 @@ class AudioEngine:
     @property
     def kokoro(self) -> Kokoro:
         if self._kokoro is None:
-            logger.info(
-                f"Loading TTS (Model: {self.config.audio_model_path}, "
-                f"Threads: {self.optimal_threads})"
-            )
-            # kokoro-onnx handles ONNX session thread count natively; it does not expose
-            # SessionOptions at construction time.
+            logger.info(f"Loading TTS (Model: {self.config.audio_model_path})")
+            # kokoro-onnx does not expose ONNX SessionOptions at construction; it uses the
+            # runtime's default thread count.
             self._kokoro = Kokoro(self.config.audio_model_path, self.config.audio_voices_path)
             # Kokoro-ONNX does not expose SessionOptions at construction time.
             # Provider pinned to CPU to avoid unexpected GPU fallback.
@@ -117,7 +129,7 @@ class AudioEngine:
                 chunk,
                 voice=self.config.audio_voice,
                 speed=self.config.audio_speed,
-                lang="en-us",
+                lang=_espeak_lang_for_voice(self.config.audio_voice),
             )
             return samples, int(sr)
         except ValueError as exc:
