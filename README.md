@@ -148,6 +148,5 @@ check that proves a real audiobook still comes out end to end.
 ## Documentation
 
 - [Architecture](docs/architecture.md) — pipeline design, concurrency model, and module breakdown
-- [Audit](docs/audit.md) — correctness/safety audit, and [ADR 0001](docs/adr/0001-audit-hardening.md) for those decisions
-- [Staff audit](docs/staff-audit.md) — the craftsmanship review, and [ADR 0002](docs/adr/0002-staff-refactor.md) for the refactor decisions
-- [Voices & Languages](docs/voices.md) — all supported voices, languages, and speed tuning
+- [Voices & languages](docs/voices.md) — all supported voices, languages, and speed tuning
+- Decision records — [ADR 0001](docs/adr/0001-audit-hardening.md) correctness/safety (see [audit](docs/audit.md)) · [ADR 0002](docs/adr/0002-staff-refactor.md) craftsmanship refactor (see [staff audit](docs/staff-audit.md)) · [ADR 0003](docs/adr/0003-perf-and-narration-quality.md) performance + narration quality

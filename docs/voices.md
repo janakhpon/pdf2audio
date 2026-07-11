@@ -50,7 +50,9 @@ The voice ID prefix indicates language and gender:
 
 ### Other Languages
 
-The LLM editor is already instructed to preserve the source language — no config change needed. Just set the matching voice:
+Set the matching voice — nothing else to configure. The TTS engine phonemizes in the voice's
+language automatically (detected from the voice-ID prefix), and the optional LLM editor is
+instructed to preserve the source language rather than translate it.
 
 | Language | Voices                                               |
 | -------- | ---------------------------------------------------- |

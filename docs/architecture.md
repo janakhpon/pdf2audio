@@ -44,6 +44,7 @@ merge_audio()  ◄────────────────────�
 (merge.py)
   • ffmpeg concat demuxer — state-ordered, not glob-sorted
   • Exports final MP3 / M4A / WAV
+  • Raises MergeError (run exits 1) on ffmpeg failure — never a silent empty run
 ```
 
 `pipeline.process_document()` is the orchestrator that wires these together for one document.
@@ -101,4 +102,6 @@ scope for an offline single-process tool (see ADR 0002).
 - [Audit](audit.md) + [ADR 0001](adr/0001-audit-hardening.md) — the correctness/safety pass
 - [Staff audit](staff-audit.md) + [ADR 0002](adr/0002-staff-refactor.md) — the craftsmanship
   refactor that shaped this module layout
+- [ADR 0003](adr/0003-perf-and-narration-quality.md) — the fit-in-RAM model, faithful full-mode
+  narration, and fail-loud merge
 - [Voices & languages](voices.md) — voice IDs and the language setting
