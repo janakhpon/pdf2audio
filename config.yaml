@@ -15,8 +15,11 @@ source:
 # Transcription and Smart Editor settings
 editor:
   enabled: true          # Set to false to bypass transcription and Ollama completely
-  model: "gemma3:27b"    # Local Ollama model for the Smart Editor (see README for other options)
-  mode: "full"            # Options: "short" (summarize), "medium" (summarize), "full" (clean formatting only)
+  model: "qwen2.5:14b"   # Local Ollama model for the Smart Editor (see README for other options).
+                          # Pick a model that FITS in RAM: on 24GB, gemma3:27b (~17GB) swaps to
+                          # disk and runs ~10x slower. qwen2.5:14b (~9GB) leaves headroom.
+  mode: "full"            # Options: "short" (summarize), "medium" (summarize), "full" (faithful
+                          # verbatim rewrite for a complete audiobook, NOT a summary).
   preserve_context: true  # Dynamically passes the summary of the previous chunk into the next chunk to guarantee coherent narrative flow across 1,000+ page books
   url: "http://localhost:11434"
   timeout: 600            # Timeout in seconds for LLM generation requests

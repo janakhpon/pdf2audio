@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 from pdf2audio.config import Config
-from pdf2audio.editor import SmartEditor
+from pdf2audio.editor import _MAX_NUM_CTX, _MIN_NUM_CTX, SmartEditor, _num_ctx_for
 from pdf2audio.errors import EditorError
 
 
@@ -135,6 +135,28 @@ def test_build_prompt_has_language_and_no_markdown_constraints(mode):
     assert "markdown" in prompt.lower()
 
 
+@pytest.mark.parametrize("mode", ["short", "medium", "full"])
+def test_build_prompt_forbids_fabrication(mode):
+    prompt = SmartEditor(make_config(editor_mode=mode))._build_prompt()
+    assert "FIDELITY" in prompt
+    # the old "ground every concept with real-world examples" invent-content directive is gone
+    assert "Ground every concept" not in prompt
+
+
+def test_build_prompt_explains_previous_context_only_when_enabled():
+    on = SmartEditor(make_config(editor_preserve_context=True))._build_prompt()
+    off = SmartEditor(make_config(editor_preserve_context=False))._build_prompt()
+    assert "PREVIOUS_CONTEXT" in on
+    assert "PREVIOUS_CONTEXT" not in off
+
+
+def test_build_prompt_full_mode_handles_structured_input():
+    prompt = SmartEditor(make_config(editor_mode="full"))._build_prompt()
+    assert "STRUCTURED INPUT" in prompt  # TOC/code/list narration rule
+    # summary modes do not carry the full-mode structured-input rule
+    assert "STRUCTURED INPUT" not in SmartEditor(make_config(editor_mode="short"))._build_prompt()
+
+
 def test_build_prompt_differs_per_mode():
     prompts = {
         mode: SmartEditor(make_config(editor_mode=mode))._build_prompt()
@@ -178,11 +200,49 @@ def test_strip_artifacts_removes_leading_preamble(raw):
     assert "here begins" not in out.lower()
 
 
-def test_strip_artifacts_removes_trailing_signoff():
+def test_strip_artifacts_removes_period_terminated_meta_opener():
     editor = SmartEditor(make_config())
     out = editor._strip_artifacts(
-        "Hash tables store key-value pairs. I hope this helps!"
+        "Analysis of the provided code and its relation to performance. Hash tables are fast."
     )
+    assert out.startswith("Hash tables are fast.")
+
+
+def test_strip_artifacts_keeps_legitimate_analysis_sentence():
+    # "Analysis of variance..." has no meta cue (the text/the provided/key concepts) — keep it.
+    editor = SmartEditor(make_config())
+    clean = "Analysis of variance is a statistical method used to compare group means."
+    assert editor._strip_artifacts(clean) == clean
+
+
+@pytest.mark.parametrize(
+    "narration",
+    [
+        "Right triangles form the basis of Euclidean geometry.",
+        "Certainly the most important development was the transistor.",
+        "Absolutely essential to this argument is the notion of scarcity.",
+        "Right now we turn to recursion.",
+        "Overview of the market shows three trends: growth, saturation, decline.",
+    ],
+)
+def test_strip_artifacts_preserves_legit_narration_openers(narration):
+    # Discourse-marker words and "Overview of ..." can legitimately open real narration; the
+    # stripper must only fire on interjections (marker + punctuation) and cue-confirmed headings.
+    editor = SmartEditor(make_config())
+    assert editor._strip_artifacts(narration) == narration
+
+
+def test_strip_artifacts_removes_doubled_signoff():
+    editor = SmartEditor(make_config())
+    out = editor._strip_artifacts(
+        "Hash tables store pairs. I hope this helps! Let me know if you need anything else."
+    )
+    assert out == "Hash tables store pairs."
+
+
+def test_strip_artifacts_removes_trailing_signoff():
+    editor = SmartEditor(make_config())
+    out = editor._strip_artifacts("Hash tables store key-value pairs. I hope this helps!")
     assert out == "Hash tables store key-value pairs."
 
 
@@ -211,7 +271,85 @@ def test_process_transcript_strips_preamble_from_model_output(monkeypatch):
     assert editor.process_transcript("raw") == "The real narration."
 
 
+# --------------------------------------------------------------------------- _num_ctx_for
+
+
+def test_num_ctx_scales_with_prompt_and_is_power_of_two():
+    small = _num_ctx_for(100)
+    large = _num_ctx_for(40_000)
+    assert small == _MIN_NUM_CTX  # tiny prompt floored to the minimum
+    assert large > small
+    assert large & (large - 1) == 0  # power of two
+
+
+def test_num_ctx_clamped_to_bounds():
+    assert _num_ctx_for(0) == _MIN_NUM_CTX
+    assert _num_ctx_for(10_000_000) == _MAX_NUM_CTX  # pathological chunk capped
+
+
+def test_payload_sets_keep_alive_and_context_window(monkeypatch):
+    editor = SmartEditor(make_config(editor_enabled=True))
+    editor._validated = True
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["payload"] = json.loads(req.data.decode("utf-8"))
+        return _FakeResponse({"message": {"content": "polished"}})
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    editor.process_transcript("some document text to polish")
+
+    payload = captured["payload"]
+    assert payload["keep_alive"]  # model stays resident between chunks
+    assert payload["options"]["num_ctx"] >= _MIN_NUM_CTX
+    assert 0.0 <= payload["options"]["temperature"] <= 1.0
+
+
 # --------------------------------------------------------------------------- graceful degradation
+
+
+def test_last_degraded_false_on_success(monkeypatch):
+    editor = SmartEditor(make_config(editor_enabled=True))
+    editor._validated = True
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda req, timeout=None: _FakeResponse({"message": {"content": "clean narration."}}),
+    )
+    assert editor.process_transcript("x") == "clean narration."
+    assert editor.last_degraded is False
+
+
+def test_ensure_ready_degrades_and_flags_subsequent_chunks(monkeypatch):
+    editor = SmartEditor(make_config(editor_enabled=True))
+
+    def _boom() -> None:
+        raise EditorError("Ollama down")
+
+    monkeypatch.setattr(editor, "validate_environment", _boom)
+    assert editor.ensure_ready() is False
+    assert editor.enabled is False
+    # a chunk that arrives after the editor disabled itself still counts as degraded
+    assert editor.process_transcript("some text") == "some text"
+    assert editor.last_degraded is True
+
+
+def test_timeout_retried_at_most_once(monkeypatch):
+    editor = SmartEditor(make_config(editor_enabled=True))
+    editor._validated = True
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=None):
+        calls["n"] += 1
+        raise TimeoutError("too slow")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr("pdf2audio.editor.time.sleep", lambda *_: None)
+
+    result = editor.process_transcript("text to polish")
+    assert result == "text to polish"  # degrades to unpolished
+    assert editor.last_degraded is True
+    assert calls["n"] == 2  # initial attempt + exactly one retry (not _MAX_RETRIES)
 
 
 def test_process_transcript_degrades_when_validate_fails(monkeypatch):

@@ -90,23 +90,29 @@ For the best audiobook quality, enable the `editor` block and use one of these m
 
 | Model          | RAM needed | Best for                                                       |
 | -------------- | ---------- | -------------------------------------------------------------- |
-| `gemma3:27b`   | ~18 GB     | **Best overall** — excellent prose flow, rarely leaks markdown |
+| `qwen2.5:14b`  | ~9 GB      | **Recommended default** — good quality, fits 16-24 GB machines |
+| `phi4:14b`     | ~9 GB      | Constrained hardware, punches above its weight                 |
+| `gemma3:27b`   | ~17 GB     | Excellent prose, but only if it fits (needs ~32 GB, see below) |
 | `qwen2.5:72b`  | ~45 GB     | Best raw quality if you have the RAM                           |
 | `llama3.3:70b` | ~45 GB     | Strong instruction-following, natural lecture tone             |
-| `qwen2.5:14b`  | ~10 GB     | Best mid-range — good quality on 16 GB machines                |
-| `phi4:14b`     | ~10 GB     | Best for constrained hardware, punches above its weight        |
+
+**The model must fit in RAM.** The Smart Editor makes one LLM call per chunk (hundreds per book),
+so if the model does not fit alongside the OS and the TTS engine, Ollama pages it to disk and each
+call runs roughly 10x slower — a book can take a full day instead of a few hours. On a 24 GB
+machine, `gemma3:27b` (~17 GB) swaps once the OS + Python + Kokoro are loaded; `qwen2.5:14b` (~9 GB)
+leaves headroom. Pick the largest model that comfortably fits, not the largest you can load.
 
 Pull a model and set it in `config.yaml`:
 
 ```bash
-ollama pull gemma3:27b
+ollama pull qwen2.5:14b
 ```
 
 ```yaml
 editor:
   enabled: true
-  model: "gemma3:27b"
-  mode: "full" # "full" preserves all content, "medium"/"short" summarize
+  model: "qwen2.5:14b"
+  mode: "full" # "full" = faithful full narration (not a summary); "medium"/"short" summarize
 ```
 
 ## Operational Notes
