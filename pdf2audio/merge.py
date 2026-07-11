@@ -6,15 +6,19 @@ from pathlib import Path
 
 from pdf2audio import documents
 from pdf2audio.config import Config
+from pdf2audio.errors import MergeError
 from pdf2audio.logger import logger
 
 
 def merge_audio(
     directory: str, output_format: str = "mp3", valid_files: list[str] | None = None
 ) -> None:
+    """Concatenate a document's chunk wavs into one file. Raises MergeError on failure.
+
+    Failing loudly matters: a swallowed merge error would let the run exit 0 with a green log
+    but no ``*_full.<fmt>`` file (se-brain cli-design: non-zero on failure)."""
     if not os.path.isdir(directory):
-        logger.error(f"Directory not found: {directory}")
-        return
+        raise MergeError(f"Directory not found: {directory}")
 
     if valid_files is not None:
         files = valid_files  # Already strict and chronologically ordered by the DB
@@ -27,8 +31,7 @@ def merge_audio(
         ]
 
     if not files:
-        logger.error(f"No files safely validated for merge in {directory}")
-        return
+        raise MergeError(f"No files safely validated for merge in {directory}")
 
     logger.info(f"Merging {len(files)} files in {directory} using ffmpeg")
 
@@ -74,12 +77,11 @@ def merge_audio(
         )
 
         if result.returncode != 0:
-            logger.error(f"ffmpeg merge failed: {result.stderr}")
-            return
+            raise MergeError(f"ffmpeg merge failed (exit {result.returncode}): {result.stderr}")
 
         logger.info("Export complete.")
     except (OSError, subprocess.SubprocessError) as exc:
-        logger.error(f"Merge error: {exc}")
+        raise MergeError(f"Merge error: {exc}") from exc
     finally:
         if os.path.exists(list_path):
             os.remove(list_path)
@@ -89,14 +91,23 @@ def merge_all(config: Config) -> int:
     """Merge each discovered document's chunk directory into one file. Returns the count merged.
 
     Used by the standalone ``merge`` command to re-assemble output after an interrupted run,
-    reusing the same document discovery as the main pipeline.
+    reusing the same document discovery as the main pipeline. A failed merge for one document is
+    logged and counted as a failure, and the command raises MergeError if any document failed so
+    the CLI exits non-zero rather than falsely reporting success.
     """
     merged = 0
+    failed = 0
     for doc in documents.discover_documents(config.source_path):
         book_audio_dir = config.out_audio_dir / doc.stem
         if book_audio_dir.is_dir():
-            merge_audio(str(book_audio_dir), config.audio_format)
-            merged += 1
-    if merged == 0:
+            try:
+                merge_audio(str(book_audio_dir), config.audio_format)
+                merged += 1
+            except MergeError as exc:
+                failed += 1
+                logger.error(f"Merge failed for {doc.stem}: {exc}")
+    if merged == 0 and failed == 0:
         logger.warning("No generated output directories found to merge.")
+    if failed:
+        raise MergeError(f"{failed} document(s) failed to merge.")
     return merged

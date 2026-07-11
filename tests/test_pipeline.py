@@ -55,9 +55,13 @@ class _FakeExtractor:
 
 class _FakeEditor:
     def __init__(self, config: Config) -> None:
-        pass
+        self.last_degraded = False
+
+    def ensure_ready(self) -> bool:
+        return True
 
     def process_transcript(self, text: str) -> str:
+        self.last_degraded = False
         return text
 
     def load_saved_context(self, text: str) -> None:
