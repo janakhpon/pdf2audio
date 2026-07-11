@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "pdf2audio"
 version = "0.1.0"
-description = "A simple, open-source tool that converts PDFs into audiobooks for free"
+description = "Convert PDF, EPUB, and HTML books into audiobooks locally"
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.11"
@@ -23,20 +23,20 @@ classifiers = [
 ]
 
 dependencies = [
-    "kokoro-onnx>=0.3.4",
-    "soundfile>=0.12.1",
-    "numpy>=1.24",
-    "PyYAML>=6.0.1",
-    "docling>=2.77.0",
+    "kokoro-onnx>=0.5.0",
+    "soundfile>=0.14.0",
+    "numpy>=2.0",
+    "PyYAML>=6.0.3",
+    "docling>=2.112.0",
     "ebooklib>=0.20",
-    "beautifulsoup4>=4.14.3",
-    "nltk>=3.9.3",
+    "beautifulsoup4>=4.15.0",
+    "nltk>=3.10.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0.0",
-    "ruff>=0.6.0",
+    "pytest>=8.0.0",
+    "ruff>=0.15.0",
     "mypy>=1.11.0",
     "types-PyYAML>=6.0.0",
 ]
