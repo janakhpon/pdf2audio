@@ -147,6 +147,70 @@ def test_build_prompt_differs_per_mode():
     assert "complete audiobook chapter transcript" in prompts["full"]
 
 
+@pytest.mark.parametrize("mode", ["short", "medium", "full"])
+def test_build_prompt_forbids_preamble_and_meta(mode):
+    prompt = SmartEditor(make_config(editor_mode=mode))._build_prompt()
+    assert "NO PREAMBLE" in prompt
+    assert "NO META-COMMENTARY" in prompt
+    assert "Okay" in prompt  # names the specific filler openers to avoid
+    assert "and nothing else" in prompt
+
+
+# --------------------------------------------------------------------------- _strip_artifacts
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "Okay, here's a breakdown of the provided text. Hash tables store key-value pairs.",
+        "Sure! Here is the rewritten transcript. Hash tables store key-value pairs.",
+        "Here's a breakdown of the chapter: Hash tables store key-value pairs.",
+        "Here begins the chapter transcript. Hash tables store key-value pairs.",
+        "Summary of Key Concepts from the Text: Hash tables store key-value pairs.",
+        "Okay. Here is a breakdown of the text. Hash tables store key-value pairs.",
+    ],
+)
+def test_strip_artifacts_removes_leading_preamble(raw):
+    editor = SmartEditor(make_config())
+    out = editor._strip_artifacts(raw)
+    assert out.startswith("Hash tables store key-value pairs.")
+    assert "breakdown" not in out.lower()
+    assert "here begins" not in out.lower()
+
+
+def test_strip_artifacts_removes_trailing_signoff():
+    editor = SmartEditor(make_config())
+    out = editor._strip_artifacts(
+        "Hash tables store key-value pairs. I hope this helps!"
+    )
+    assert out == "Hash tables store key-value pairs."
+
+
+def test_strip_artifacts_leaves_clean_narration_untouched():
+    editor = SmartEditor(make_config())
+    clean = "Hash tables store key-value pairs, offering constant-time lookups on average."
+    assert editor._strip_artifacts(clean) == clean
+
+
+def test_strip_artifacts_never_returns_empty():
+    editor = SmartEditor(make_config())
+    # A response that is nothing but preamble must not collapse to an empty string.
+    assert editor._strip_artifacts("Okay, sure.") != ""
+
+
+def test_process_transcript_strips_preamble_from_model_output(monkeypatch):
+    editor = SmartEditor(make_config(editor_enabled=True))
+    editor._validated = True
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda req, timeout=None: _FakeResponse(
+            {"message": {"content": "Okay, here's the transcript. The real narration."}}
+        ),
+    )
+    assert editor.process_transcript("raw") == "The real narration."
+
+
 # --------------------------------------------------------------------------- graceful degradation
 
 

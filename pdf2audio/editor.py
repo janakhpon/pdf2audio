@@ -12,6 +12,34 @@ _MAX_RETRIES = 3
 _BASE_DELAY = 2.0
 _VALIDATE_TIMEOUT = 5  # seconds — quick reachability check before the (slow) polish calls
 
+# Deterministic backstop for LLM preamble/meta leakage. Even with an explicit "no preamble"
+# instruction, chat models intermittently open a chunk with a conversational filler ("Okay,
+# here's a breakdown…"), a meta heading ("Summary of the Text:"), or a transcript announcement.
+# Narration must never contain these, so we strip a matching *leading* segment (and trailing
+# sign-offs). Patterns are deliberately conservative — they only fire at the very start and only
+# on unambiguous meta phrasing, so real narration is left untouched.
+_PREAMBLE_RE = re.compile(
+    r"""^\s*(?:
+        # pure conversational filler opener, up to the first sentence break
+        (?:okay|ok|sure|alright|all\s+right|certainly|of\s+course|got\s+it|understood
+           |no\s+problem|absolutely|right)\b[^.!?\n]*[.!?\n]
+      | # "here's / below is the <breakdown|summary|transcript|version> …" (ends at .!?: or newline)
+        (?:here(?:['’]s|\s+is)|below\s+is|the\s+following\s+is)\b[^.!?:\n]*
+        \b(?:breakdown|summary|rewrite|rewritten|version|transcript|text|analysis
+             |explanation|takeaways?)\b[^.!?:\n]*[.!?:\n]
+      | # "here begins the (chapter) transcript."
+        here\s+begins\s+the\s+(?:chapter\s+)?transcript\b[^.!?\n]*[.!?\n]
+      | # a meta heading such as "Summary of …:" / "Analysis of …:" (must end in colon/newline)
+        (?:summary|analysis|overview|breakdown)\s+(?:of|and)\b[^:\n]{0,120}[:\n]
+    )\s*""",
+    re.IGNORECASE | re.VERBOSE,
+)
+_SIGNOFF_RE = re.compile(
+    r"\s*(?:i\s+hope\s+this\s+helps|let\s+me\s+know\s+if[^.!?\n]*|feel\s+free\s+to[^.!?\n]*"
+    r"|hope\s+(?:you|this)[^.!?\n]*)[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
 
 class SmartEditor:
     """Optional Ollama-backed text polish. Degrades to the unpolished text on any failure
@@ -37,6 +65,23 @@ class SmartEditor:
         if match:
             return sliced[match.end() :].strip()
         return sliced.strip()
+
+    def _strip_artifacts(self, text: str) -> str:
+        """Remove leaked conversational preamble/meta framing from the model's output.
+
+        A safety net over the prompt's "no preamble" instruction: chat models still open a
+        chunk with "Okay, here's a breakdown…", a "Summary of…:" heading, or a transcript
+        announcement often enough that narration needs a deterministic guard. Strips up to two
+        leading meta segments (handles a doubled "Okay, here's X. Summary of Y:" opener) plus a
+        trailing sign-off. Falls back to the original text if stripping would empty it."""
+        out = text.strip()
+        for _ in range(2):
+            stripped = _PREAMBLE_RE.sub("", out, count=1).strip()
+            if stripped == out:
+                break
+            out = stripped
+        out = _SIGNOFF_RE.sub("", out).strip()
+        return out or text
 
     def load_saved_context(self, saved_text: str) -> None:
         """Restore narrative context from a previously-saved transcript (used on resume)."""
@@ -109,7 +154,9 @@ class SmartEditor:
                 )
                 with urllib.request.urlopen(req, timeout=self.timeout) as response:
                     result = json.loads(response.read().decode("utf-8"))
-                polished = str(result.get("message", {}).get("content", "")).strip()
+                polished = self._strip_artifacts(
+                    str(result.get("message", {}).get("content", "")).strip()
+                )
                 if polished:
                     if self.preserve_context:
                         self._previous_context = (
@@ -165,22 +212,40 @@ class SmartEditor:
             "Use clear transitions between ideas, as a skilled speaker would, "
             "so the listener can follow along effortlessly."
         )
+        no_preamble = (
+            "CRITICAL - NO PREAMBLE: Begin your response immediately with the actual spoken "
+            "content. Your very first words must be the narration itself. Do NOT open with any "
+            "acknowledgement, preamble, or meta-comment. Never begin with words or phrases such "
+            "as 'Okay', 'Sure', 'Alright', 'Certainly', 'Of course', 'Here is', \"Here's\", "
+            "'Here is a breakdown', 'Below is', 'Here begins the transcript', or with a heading "
+            "such as 'Summary of...', 'Analysis of...', 'Overview of...', or 'Key Takeaways'."
+        )
+        no_meta = (
+            "CRITICAL - NO META-COMMENTARY: Never mention 'the text', 'the provided text', 'the "
+            "passage', 'the source', 'the document', 'the author', or the fact that you are "
+            "rewriting, summarizing, or processing anything. Do NOT describe what the material "
+            "does (never write things like 'This text explains...' or 'This section covers...'); "
+            "instead, narrate the material directly in the lecturer's own voice, as if the ideas "
+            "are your own. Do NOT add a title or heading, and do NOT end with a closing remark "
+            "such as 'I hope this helps' or 'Let me know if you need anything else'."
+        )
+        rules = f"{no_preamble} {no_meta} {voice_constraint} {lang_constraint} {formatting_constraint}"
 
         if self.mode == "short":
             return (
                 f"{purpose} "
                 f"Condense the following text into a brief spoken summary of the core idea, "
                 f"suitable for an audiobook chapter introduction. "
-                f"{voice_constraint} {lang_constraint} {formatting_constraint} "
-                f"Return ONLY the spoken summary."
+                f"{rules} "
+                f"Return ONLY the spoken summary, and nothing else."
             )
         elif self.mode == "medium":
             return (
                 f"{purpose} "
                 f"Summarize the following text into a medium-length spoken explanation "
                 f"for an audiobook, covering all key points and their significance. "
-                f"{voice_constraint} {lang_constraint} {formatting_constraint} "
-                f"Return ONLY the spoken summary."
+                f"{rules} "
+                f"Return ONLY the spoken summary, and nothing else."
             )
         else:  # full
             return (
@@ -190,6 +255,6 @@ class SmartEditor:
                 f"Fix awkward phrasing, broken sentences, and any formatting artifacts "
                 f"from PDF or HTML extraction. "
                 f"Do NOT summarize, skip, or omit any content. "
-                f"{voice_constraint} {lang_constraint} {formatting_constraint} "
-                f"Return ONLY the complete audiobook transcript."
+                f"{rules} "
+                f"Return ONLY the complete audiobook transcript, and nothing else."
             )
