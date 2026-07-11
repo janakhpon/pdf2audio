@@ -172,7 +172,15 @@ class AudioEngine:
                 writer.write(samples)
 
             if writer is None:
-                # Nothing pronounceable — emit a valid empty wav so downstream state is consistent.
+                # No segment produced audio. This is expected for punctuation-only text, but for
+                # a chunk with real words it means silent output — surface it rather than hide it.
+                if any(c.isalnum() for c in text):
+                    logger.warning(
+                        f"No audio produced for a chunk with text content "
+                        f"('{text.strip()[:40]}...'); writing silent audio. Check the voice's "
+                        f"language matches the text."
+                    )
+                # Emit a valid empty wav so downstream state stays consistent.
                 writer = sf.SoundFile(
                     str(temp_final),
                     mode="w",

@@ -35,15 +35,41 @@ _QUEUE_MAXSIZE = 3  # cap buffered chunks awaiting TTS
 
 
 def sanitize_for_tts(text: str) -> str:
-    """Strip residual markdown the LLM may emit despite instructions, before synthesis."""
-    text = re.sub(r"\*+", "", text)  # asterisks
+    """Turn residual visual/markup cruft into clean spoken text before synthesis.
+
+    This is the last line of defence for both the polished output and the raw-text fallback
+    (see SmartEditor). It only removes things that are unambiguously non-content on a page —
+    placeholders, markup symbols, table scaffolding, bare URLs. Context-dependent choices
+    (figure/page references, citation numbers, table meaning) are left to the LLM.
+    """
+    # Order matters: strip docling's HTML-comment placeholders (<!-- image -->,
+    # <!-- formula-not-decoded -->, <!-- missing-* -->) BEFORE the dash rule, or their "--" gets
+    # turned into commas and voiced as garbage.
+    text = re.sub(r"<!--.*?-->", " ", text, flags=re.DOTALL)
+    text = re.sub(r"!\[[^\]]*\]\([^)]*\)", " ", text)  # ![alt](url) image -> drop (incl. the !)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)  # [link](url) -> link text
+    # Bare citation/footnote markers ("Smith [12]" -> "Smith"). Require a leading space so attached
+    # array indices (a[0], arr[5]) and non-numeric brackets ([i]) are left untouched.
+    text = re.sub(r"\s+\[\d+\]", "", text)
+    text = re.sub(r"https?://\S+", " ", text)  # bare URL -> drop (annoying to hear spelled out)
+    # Pipe tables: drop separator rows, then read remaining cells as a short spoken list.
+    text = re.sub(r"(?m)^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$", " ", text)  # |---|:--:| separator rows
+    text = re.sub(r"\s*\|\s*", ", ", text)  # cell dividers -> comma pause
+    text = re.sub(r"\*+", "", text)  # bold/italic asterisks
     text = re.sub(r"#+\s*", "", text)  # headings
     text = re.sub(r"`+", "", text)  # code ticks
-    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)  # [link](url) -> link text
-    text = re.sub(r"-{2,}", ",", text)  # em-dashes -> comma pause
+    text = re.sub(r"~~", "", text)  # strikethrough
+    text = re.sub(r"\${1,2}", "", text)  # $ / $$ formula delimiters
+    text = re.sub(r"\\[()\[\]]", "", text)  # LaTeX \( \) \[ \] math delimiters (keep the content)
     text = re.sub(r"_{2,}", "", text)  # double underscores
+    text = re.sub(r"[ \t]*(?:[—–]|-{2,})[ \t]*", ", ", text)  # em/en dash or -- -> comma pause
     text = re.sub(r"\s+", " ", text)
-    return text.strip()
+    # Tidy punctuation the substitutions can leave behind (e.g. a stray " , " where a rule/dash
+    # between blocks was dropped).
+    text = re.sub(r"\s+([,.;:!?])", r"\1", text)  # no space before punctuation
+    text = re.sub(r"([.!?])[,;:]+", r"\1", text)  # drop a separator orphaned after sentence-end
+    text = re.sub(r"[,;:](?=[,;:])", "", text)  # collapse runs of separators
+    return text.strip(" ,;:")
 
 
 def process_document(doc_path: Path, config: Config) -> None:
@@ -177,8 +203,9 @@ def process_document(doc_path: Path, config: Config) -> None:
 
         if degraded_chunks:
             logger.warning(
-                f"{degraded_chunks} of {chunks_processed} chunk(s) were narrated from UNPOLISHED "
-                f"text because the editor was unavailable. Fix Ollama and re-run to re-polish them."
+                f"{degraded_chunks} of {chunks_processed} chunk(s) used the complete raw text "
+                f"(editor unavailable, or its polish dropped/truncated content) to keep the "
+                f"narration complete. Re-run once Ollama is healthy to re-polish them."
             )
 
         pending = store.pending_count(doc_hash)
