@@ -196,9 +196,30 @@ def test_unsupported_file_is_a_noop(tmp_path, monkeypatch):
         ("# Heading\ntext", "Heading text"),
         ("use `code` here", "use code here"),
         ("see [link](http://x.com)", "see link"),
-        ("a -- b", "a , b"),
+        ("a -- b", "a, b"),  # em-dash -> natural comma pause, no orphan space
         ("multi   space", "multi space"),
+        # docling image placeholder is removed cleanly, NOT mangled into "<!, image ,>"
+        ("before <!-- image --> after", "before after"),
+        ("<!-- formula-not-decoded -->", ""),
+        ("![Image](data:image/png;base64,zzz) caption", "caption"),  # image markdown dropped
+        ("visit https://example.com/path now", "visit now"),  # bare URL dropped
+        ("done. -- Next point", "done. Next point"),  # no orphan comma after a sentence end
+        ("the ratio \\( n \\) to \\( k \\)", "the ratio n to k"),  # LaTeX math delimiters dropped
     ],
 )
 def test_sanitize_for_tts(raw, expected):
     assert pipeline.sanitize_for_tts(raw) == expected
+
+
+def test_sanitize_for_tts_strips_citation_markers_but_keeps_indices():
+    assert pipeline.sanitize_for_tts("proven by Smith [12].") == "proven by Smith."
+    # attached array indices and non-numeric brackets are technical content, kept as-is
+    assert "a[0]" in pipeline.sanitize_for_tts("the array a[0] holds the value")
+    assert "[i]" in pipeline.sanitize_for_tts("the element [i] is next")
+
+
+def test_sanitize_for_tts_descaffolds_pipe_table():
+    out = pipeline.sanitize_for_tts("| Name | Age |\n|------|-----|\n| Bob | 30 |")
+    assert "|" not in out  # no cell dividers voiced as "vertical bar"
+    assert "---" not in out and "<!" not in out
+    assert "Bob" in out and "30" in out  # the actual data is preserved

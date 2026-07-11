@@ -162,6 +162,19 @@ def test_build_prompt_full_mode_handles_structured_input():
     assert "STRUCTURED INPUT" not in SmartEditor(make_config(editor_mode="short"))._build_prompt()
 
 
+def test_build_prompt_full_mode_has_spoken_listen_rules():
+    prompt = SmartEditor(make_config(editor_mode="full"))._build_prompt()
+    assert "SPOKEN, NOT VISUAL" in prompt
+    # names the visual-only things to naturalize/omit rather than read aloud
+    for cue in ("page numbers", "Figure", "table", "citation"):
+        assert cue in prompt
+    # a concrete before->after example (few-shot) and the audiobook conventions
+    assert "should be narrated simply" in prompt
+    assert "AUDIOBOOK CONVENTIONS" in prompt
+    for cue in ("Chapter 3", "copyright", "ISBN"):
+        assert cue in prompt
+
+
 def test_build_prompt_differs_per_mode():
     prompts = {
         mode: SmartEditor(make_config(editor_mode=mode))._build_prompt()
@@ -327,6 +340,92 @@ def test_payload_sets_keep_alive_and_context_window(monkeypatch):
     assert 0.0 <= payload["options"]["temperature"] <= 1.0
 
 
+# --------------------------------------------------------------------------- completeness guard
+
+
+def test_full_mode_falls_back_to_raw_when_polish_summarizes(monkeypatch):
+    editor = SmartEditor(make_config(editor_mode="full"))
+    editor._validated = True
+    raw = "word " * 100  # 100 words of source
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda req, timeout=None: _FakeResponse({"message": {"content": "a tiny summary."}}),
+    )
+    assert editor.process_transcript(raw) == raw  # complete raw text, not the 3-word summary
+    assert editor.last_degraded is True
+
+
+def test_full_mode_falls_back_to_raw_on_output_truncation(monkeypatch):
+    editor = SmartEditor(make_config(editor_mode="full"))
+    editor._validated = True
+    raw = "word " * 50
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda req, timeout=None: _FakeResponse(
+            {"message": {"content": "word " * 50}, "done_reason": "length"}
+        ),
+    )
+    assert editor.process_transcript(raw) == raw  # truncated output rejected in favor of raw
+    assert editor.last_degraded is True
+
+
+def test_full_mode_falls_back_to_raw_when_prompt_overflows(monkeypatch):
+    editor = SmartEditor(make_config(editor_mode="full"))
+    editor._validated = True
+    editor.num_ctx = 8  # tiny window so any real prompt overflows
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=None):
+        calls["n"] += 1
+        return _FakeResponse({"message": {"content": "x"}})
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    raw = "some source text that will not fit in the window"
+    assert editor.process_transcript(raw) == raw
+    assert editor.last_degraded is True
+    assert calls["n"] == 0  # never sent a request that would silently truncate the source
+
+
+def test_full_mode_keeps_a_faithful_full_length_polish(monkeypatch):
+    editor = SmartEditor(make_config(editor_mode="full"))
+    editor._validated = True
+    raw = "word " * 100
+    polished = "polished word " * 90  # comparable length -> faithful, kept
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda req, timeout=None: _FakeResponse({"message": {"content": polished}}),
+    )
+    assert editor.process_transcript(raw) == polished.strip()
+    assert editor.last_degraded is False
+
+
+@pytest.mark.parametrize("mode", ["short", "medium"])
+def test_summary_modes_are_not_subject_to_the_ratio_guard(mode, monkeypatch):
+    # A short/medium summary is meant to be much shorter than the source; it must be kept.
+    editor = SmartEditor(make_config(editor_mode=mode))
+    editor._validated = True
+    raw = "word " * 100
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda req, timeout=None: _FakeResponse({"message": {"content": "a short summary."}}),
+    )
+    assert editor.process_transcript(raw) == "a short summary."
+    assert editor.last_degraded is False
+
+
+def test_strip_artifacts_keeps_content_after_a_filler_opener():
+    editor = SmartEditor(make_config())
+    # the interjection is removed, the real sentence it introduces is kept
+    assert (
+        editor._strip_artifacts("Right, the hypotenuse is a side.") == "the hypotenuse is a side."
+    )
+    assert editor._strip_artifacts("Sure, the derivation follows.") == "the derivation follows."
+
+
 # --------------------------------------------------------------------------- graceful degradation
 
 
@@ -400,12 +499,14 @@ def test_process_transcript_happy_path(monkeypatch):
     def fake_urlopen(req, timeout=None):
         captured["url"] = req.full_url
         captured["payload"] = json.loads(req.data.decode("utf-8"))
-        return _FakeResponse({"message": {"content": "polished"}})
+        # comparable length to the input so the completeness guard keeps it (this test is about
+        # the request/response plumbing, not completeness)
+        return _FakeResponse({"message": {"content": "the polished document text"}})
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
 
     result = editor.process_transcript("raw document text")
-    assert result == "polished"
+    assert result == "the polished document text"
 
     # Posted to the chat endpoint.
     assert captured["url"].endswith("/api/chat")

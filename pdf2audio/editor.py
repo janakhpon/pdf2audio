@@ -15,6 +15,11 @@ _VALIDATE_TIMEOUT = 5  # seconds — quick reachability check before the (slow) 
 
 _KEEP_ALIVE = "30m"  # keep the model resident across chunks (Ollama default unloads after 5m)
 _TEMPERATURE = 0.4  # faithful, on-task rewrite over creative embellishment
+# Full-mode completeness floor: if the polished output keeps fewer than this fraction of the
+# source's words, the model summarized/dropped content, so we narrate the complete raw text
+# instead. Faithful full-mode rewrites run ~1x the source or longer; gross summaries fall well
+# below this, so the threshold separates them with margin.
+_COMPLETENESS_RATIO = 0.65
 _MIN_NUM_CTX = 4096
 _MAX_NUM_CTX = 32768  # bound the KV cache so a huge chunk can't blow up memory
 
@@ -45,12 +50,12 @@ def _num_ctx_for_chunk_size(chunk_size: int) -> int:
 # on unambiguous meta phrasing, so real narration is left untouched.
 _PREAMBLE_RE = re.compile(
     r"""^\s*(?:
-        # conversational filler used as an interjection: the discourse marker must be followed
-        # immediately by clause punctuation, then the rest of that sentence is consumed. The
-        # punctuation gate is what keeps ordinary narration that merely starts with one of these
-        # words intact ("Right triangles form…", "Certainly the most important…", "Sure footing…").
+        # conversational filler used as an interjection: strip ONLY the discourse marker and its
+        # trailing punctuation, never the sentence it introduces, so real content that follows is
+        # kept ("Right, the hypotenuse is a side." -> "the hypotenuse is a side."). The punctuation
+        # gate also spares ordinary openers ("Right triangles form…", "Certainly the most…").
         (?:okay|ok|sure|alright|all\s+right|certainly|of\s+course|got\s+it|understood
-           |no\s+problem|absolutely|right)\b\s*(?:[,:][^.!?\n]*[.!?\n]|[.!?])
+           |no\s+problem|absolutely|right)\b\s*[,:.!?]+\s*
       | # "here's / below is the <breakdown|summary|transcript|version> …" (ends at .!?: or newline)
         (?:here(?:['’]s|\s+is)|below\s+is|the\s+following\s+is)\b[^.!?:\n]*
         \b(?:breakdown|summary|rewrite|rewritten|version|transcript|text|analysis
@@ -212,10 +217,18 @@ class SmartEditor:
         system_content = self._build_prompt()
         user_content = f"{context_block}TEXT TO PROCESS:\n{text}"
         # num_ctx is fixed for the run. If a chunk's prompt alone overflows it, Ollama truncates
-        # the prompt (silent source loss), so warn; output-side truncation is caught separately
-        # via done_reason below.
+        # the prompt and silently drops source text. In full mode that loses meaning, so narrate
+        # the complete raw text instead; summary modes are lossy by design, so only warn.
         prompt_tokens = (len(system_content) + len(user_content)) // 4
         if prompt_tokens > self.num_ctx:
+            if self.mode == "full":
+                logger.warning(
+                    f"Chunk prompt (~{prompt_tokens} tokens) exceeds the context window "
+                    f"({self.num_ctx}); using the complete raw text for this chunk so no source "
+                    f"content is dropped. Lower chunk_size to let the editor polish it."
+                )
+                self.last_degraded = True
+                return text
             logger.warning(
                 f"Chunk prompt (~{prompt_tokens} tokens) exceeds the context window "
                 f"({self.num_ctx}); its tail will be truncated. Lower chunk_size in config."
@@ -247,16 +260,32 @@ class SmartEditor:
                 )
                 with urllib.request.urlopen(req, timeout=self.timeout) as response:
                     result = json.loads(response.read().decode("utf-8"))
-                if result.get("done_reason") == "length":
-                    # The generation hit the context ceiling — the chunk's tail was cut off.
+                if result.get("done_reason") == "length" and self.mode == "full":
+                    # Output hit the context ceiling and was cut off. Retrying is pointless (same
+                    # prompt), so narrate the complete raw text rather than a truncated rewrite.
                     logger.warning(
-                        "Ollama stopped at the context limit (done_reason=length); this chunk's "
-                        "narration may be truncated. Reduce chunk_size in config."
+                        "Ollama hit the context limit (done_reason=length) and truncated the "
+                        "output; using the complete raw text for this chunk instead."
                     )
+                    self.last_degraded = True
+                    return text
                 polished = self._strip_artifacts(
                     str(result.get("message", {}).get("content", "")).strip()
                 )
                 if polished:
+                    if self.mode == "full":
+                        raw_words = len(text.split())
+                        out_words = len(polished.split())
+                        if raw_words and out_words < _COMPLETENESS_RATIO * raw_words:
+                            # The rewrite dropped a large share of the source — summarized, not
+                            # narrated. Prefer the complete raw text over a lossy polish.
+                            logger.warning(
+                                f"Polish kept only {out_words}/{raw_words} words "
+                                f"({out_words / raw_words:.0%}); using the complete raw text for "
+                                f"this chunk to preserve meaning."
+                            )
+                            self.last_degraded = True
+                            return text
                     if self.preserve_context:
                         self._previous_context = (
                             polished
@@ -376,6 +405,27 @@ class SmartEditor:
                 "list, describe what the chapter or section will cover; for code, explain in "
                 "prose what the code does and why, rather than reading the symbols aloud."
             )
+            listen_rules = (
+                "SPOKEN, NOT VISUAL: This is heard, never seen, so drop what only makes sense on a "
+                "page while keeping the meaning. Do NOT voice page numbers, figure/table numbers, "
+                "or cross-references like 'see Figure 3.2' or 'as shown on page 47' — either weave "
+                "the point in naturally ('as the next example shows') or omit the pointer, but "
+                "keep the idea it refers to. Describe a figure or image in plain prose from its "
+                "caption; if it cannot be described from a caption, omit the reference entirely "
+                "and keep the surrounding explanation. Render a table as flowing sentences, not "
+                "cell by cell. Speak mathematical symbols and formulas in words. Do NOT voice "
+                "citation or footnote markers. For example, 'As shown in Figure 3.2 on page 47, "
+                "the tree stays balanced [12].' should be narrated simply as 'The tree stays "
+                "balanced.'"
+            )
+            conventions = (
+                "AUDIOBOOK CONVENTIONS: When the text opens with a chapter or section title, "
+                "announce it naturally before narrating — if the title already carries a number "
+                "keep it ('Chapter 3. Hash Tables.'), but never invent a chapter or section number "
+                "that is not in the source. Do NOT read front-matter boilerplate aloud — copyright "
+                "notices, ISBNs, publisher lines, or a table of contents; give a brief natural "
+                "lead-in or skip it."
+            )
             return (
                 f"{purpose} "
                 f"Rewrite the following text as a complete audiobook chapter transcript. "
@@ -383,7 +433,7 @@ class SmartEditor:
                 f"Fix awkward phrasing, broken sentences, and any formatting artifacts "
                 f"from PDF or HTML extraction. "
                 f"Do NOT summarize, skip, or omit any content. "
-                f"{structured_input} "
+                f"{structured_input} {listen_rules} {conventions} "
                 f"{rules} "
                 f"Return the COMPLETE transcript covering every point in the source, in order, "
                 f"without summarizing, shortening, or omitting anything — and nothing else."
