@@ -1,3 +1,5 @@
+"""Assemble the per-chunk audio into a single file with ffmpeg's concat demuxer."""
+
 from __future__ import annotations
 
 import os
@@ -87,13 +89,13 @@ def merge_audio(
             os.remove(list_path)
 
 
-def merge_all(config: Config) -> int:
-    """Merge each discovered document's chunk directory into one file. Returns the count merged.
+def merge_all(config: Config) -> None:
+    """Merge each discovered document's chunk directory into one file.
 
     Used by the standalone ``merge`` command to re-assemble output after an interrupted run,
     reusing the same document discovery as the main pipeline. A failed merge for one document is
-    logged and counted as a failure, and the command raises MergeError if any document failed so
-    the CLI exits non-zero rather than falsely reporting success.
+    logged and counted, and the command raises MergeError if any document failed so the CLI exits
+    non-zero rather than falsely reporting success.
     """
     merged = 0
     failed = 0
@@ -108,6 +110,7 @@ def merge_all(config: Config) -> int:
                 logger.error(f"Merge failed for {doc.stem}: {exc}")
     if merged == 0 and failed == 0:
         logger.warning("No generated output directories found to merge.")
+    elif merged:
+        logger.info(f"Merged {merged} document(s).")
     if failed:
         raise MergeError(f"{failed} document(s) failed to merge.")
-    return merged

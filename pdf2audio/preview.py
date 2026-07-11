@@ -1,3 +1,5 @@
+"""Synthesize a short sample of the configured voice so it can be auditioned before a full run."""
+
 from __future__ import annotations
 
 from pathlib import Path

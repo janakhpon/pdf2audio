@@ -1,3 +1,7 @@
+"""Load and validate config.yaml into a typed Config, failing fast on bad values."""
+
+from __future__ import annotations
+
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -107,7 +111,7 @@ def load_config(config_path: str | Path | None = None) -> Config:
         source_path=parsed_source,
         chunk_size=chunk_size,
         editor_enabled=editor_enabled,
-        editor_model=data.get("editor", {}).get("model", "gemma3:27b"),
+        editor_model=data.get("editor", {}).get("model", "qwen2.5:14b"),
         editor_mode=editor_mode,
         editor_preserve_context=data.get("editor", {}).get("preserve_context", True),
         editor_url=editor_url,

@@ -1,3 +1,7 @@
+"""Optional Ollama-backed text polish that rewrites extracted text into clean spoken narration."""
+
+from __future__ import annotations
+
 import json
 import re
 import time
