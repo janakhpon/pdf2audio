@@ -170,6 +170,26 @@ def test_generate_empty_text_is_a_noop(engine, tmp_path):
     assert not out.with_suffix(".wav").exists()
 
 
+def test_generate_splits_segment_that_trips_phoneme_limit(engine, tmp_path):
+    # kokoro raises IndexError at its 510-phoneme cap on a dense segment; the engine must split
+    # and retry so the chunk still produces audio instead of failing the whole chunk.
+    calls = []
+
+    def fake_create(text, voice, speed, lang):
+        calls.append(text)
+        if len(text.split()) > 3:  # pretend >3 words trips the phoneme cap
+            raise IndexError("index 510 is out of bounds for axis 0 with size 510")
+        return np.zeros(100, dtype=np.float32), 24000
+
+    engine._kokoro.create = fake_create  # type: ignore[method-assign]
+    out = tmp_path / "audio" / "c"
+    engine.generate("one two three four five six", out)
+
+    data, _ = sf.read(str(out.with_suffix(".wav")))
+    assert len(data) > 0  # produced audio despite the initial over-length failure
+    assert any(len(t.split()) <= 3 for t in calls)  # retried with smaller segments
+
+
 def test_synthesis_error_raises_audio_error_and_cleans_temp(engine, tmp_path):
     def _boom(text, voice, speed, lang):
         raise ValueError("model exploded")
