@@ -413,6 +413,22 @@ def test_full_mode_keeps_a_cleaned_shorter_polish(monkeypatch):
     assert editor.last_degraded is False
 
 
+def test_full_mode_trusts_a_short_but_real_polish(monkeypatch):
+    # A legitimately short rendering (an intro lead-in, a chapter summary, or a condensed
+    # structural page) sits above the near-empty floor and is trusted -- NOT replaced by raw.
+    editor = SmartEditor(make_config(editor_mode="full"))
+    editor._validated = True
+    raw = "word " * 100
+    polished = "concise spoken summary " * 5  # ~15% of the source -> short but real, kept
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda req, timeout=None: _FakeResponse({"message": {"content": polished}}),
+    )
+    assert editor.process_transcript(raw) == polished.strip()
+    assert editor.last_degraded is False
+
+
 @pytest.mark.parametrize("mode", ["short", "medium"])
 def test_summary_modes_are_not_subject_to_the_ratio_guard(mode, monkeypatch):
     # A short/medium summary is meant to be much shorter than the source; it must be kept.

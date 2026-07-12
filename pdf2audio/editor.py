@@ -19,12 +19,12 @@ _VALIDATE_TIMEOUT = 5  # seconds — quick reachability check before the (slow) 
 
 _KEEP_ALIVE = "30m"  # keep the model resident across chunks (Ollama default unloads after 5m)
 _TEMPERATURE = 0.4  # faithful, on-task rewrite over creative embellishment
-# Full-mode collapse floor: the polished narration is normally shorter than the raw source (it
-# drops page-only noise — figure/page references, hex/ID dumps, verbatim code), so a moderate word
-# drop is expected and desirable, and we use the polished result. Only when it keeps LESS than this
-# fraction has the model actually collapsed/hard-summarized the chunk; then we fall back to the
-# complete raw text. Set low so ordinary cleanup is kept, not discarded.
-_COLLAPSE_RATIO = 0.25
+# Full-mode collapse floor. The polished narration is normally shorter than the raw source (it drops
+# page-only noise, and legitimately-short renderings — an intro lead-in, a chapter summary, or a
+# condensed structural/code page — are exactly what we want), so we TRUST and use the polish. Raw is
+# used only when the polish is really broken: empty, errored, truncated (done_reason=length), or a
+# near-empty fragment below this floor. Kept very low so short-but-real outputs are never discarded.
+_COLLAPSE_RATIO = 0.10
 
 
 # Deterministic backstop for LLM preamble/meta leakage. Even with an explicit "no preamble"
