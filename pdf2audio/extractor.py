@@ -19,6 +19,40 @@ if TYPE_CHECKING:
 # Reject implausibly large inputs early rather than OOM-ing deep inside docling/ebooklib.
 _MAX_FILE_BYTES = 500 * 1024 * 1024  # 500 MB
 
+# Hard ceiling on words per chunk. A local model faithfully rewrites short passages but summarizes
+# long ones, so an oversized chunk would be rejected by the editor's completeness guard and narrated
+# unpolished. Splitting to this ceiling keeps each chunk within faithful-rewrite range (and within
+# the editor's context window). chunk_size still controls the coarse grouping; this caps the result.
+_MAX_CHUNK_WORDS = 1200
+_SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+")
+
+
+def _split_to_word_limit(text: str, max_words: int) -> list[str]:
+    """Split text into pieces of at most max_words, preferring sentence boundaries. Lossless:
+    every word is preserved exactly once; a single sentence longer than the limit is hard-split."""
+    if len(text.split()) <= max_words:
+        return [text]
+    pieces: list[str] = []
+    current: list[str] = []
+    current_words = 0
+    for sentence in _SENTENCE_BOUNDARY.split(text):
+        words = sentence.split()
+        if not words:
+            continue
+        if current and current_words + len(words) > max_words:
+            pieces.append(" ".join(current))
+            current, current_words = [], 0
+        if len(words) > max_words:  # a lone sentence bigger than the budget: hard-split by words
+            for i in range(0, len(words), max_words):
+                pieces.append(" ".join(words[i : i + max_words]))
+            continue
+        current.append(sentence)
+        current_words += len(words)
+    if current:
+        pieces.append(" ".join(current))
+    return pieces
+
+
 # Tags to drop before reading text. Loose HTML files carry site chrome, so strip broadly; EPUB
 # chapter bodies are already just the chapter, so strip only what is never reading content (a
 # chapter's <header>/<aside> can hold its title or a pull-quote, so those are kept for EPUBs).
@@ -66,6 +100,12 @@ class DocumentExtractor:
             )
 
     def process_file(self, file_path: Path) -> Iterator[str]:
+        # Cap every chunk at _MAX_CHUNK_WORDS so the editor can rewrite it faithfully rather than
+        # summarize it. Applied uniformly across PDF/EPUB/HTML.
+        for chunk in self._extract(file_path):
+            yield from _split_to_word_limit(chunk, _MAX_CHUNK_WORDS)
+
+    def _extract(self, file_path: Path) -> Iterator[str]:
         if not file_path.exists():
             raise ExtractionError(f"File not found: {file_path}")
 
