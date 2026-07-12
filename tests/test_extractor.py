@@ -5,8 +5,9 @@ from __future__ import annotations
 
 import pytest
 from ebooklib import epub
+from pdf2audio import extractor as extractor_mod
 from pdf2audio.errors import ExtractionError
-from pdf2audio.extractor import DocumentExtractor
+from pdf2audio.extractor import DocumentExtractor, _split_to_word_limit
 
 
 def _make_epub(path, *, spine, chapters, add_nav=True):
@@ -118,6 +119,41 @@ def test_dir_without_html_raises(tmp_path):
     (empty_dir / "notes.txt").write_text("hi", encoding="utf-8")
     with pytest.raises(ExtractionError, match="does not contain HTML"):
         list(DocumentExtractor().process_file(empty_dir))
+
+
+# --------------------------------------------------------------------------- word-limit chunking
+
+
+def test_split_to_word_limit_prefers_sentences_and_is_lossless():
+    text = "One two three. Four five six. Seven eight nine. Ten eleven twelve."
+    pieces = _split_to_word_limit(text, max_words=6)
+    assert all(len(p.split()) <= 6 for p in pieces)
+    assert " ".join(pieces).split() == text.split()  # no words lost or duplicated
+
+
+def test_split_to_word_limit_hard_splits_a_long_sentence():
+    text = " ".join(f"w{i}" for i in range(50))  # one 50-word "sentence", no punctuation
+    pieces = _split_to_word_limit(text, max_words=20)
+    assert [len(p.split()) for p in pieces] == [20, 20, 10]
+    assert " ".join(pieces).split() == text.split()
+
+
+def test_split_to_word_limit_short_text_untouched():
+    assert _split_to_word_limit("short enough here", max_words=1200) == ["short enough here"]
+
+
+def test_process_file_caps_chunk_words(tmp_path):
+    # A single HTML file far over the ceiling must be split into multiple within-ceiling chunks.
+    html_dir = tmp_path / "book"
+    html_dir.mkdir()
+    body = " ".join(f"word{i}" for i in range(3000))
+    (html_dir / "chapter_1.html").write_text(f"<p>{body}</p>", encoding="utf-8")
+
+    chunks = list(DocumentExtractor(chunk_size=1).process_file(html_dir))
+
+    assert len(chunks) > 1
+    assert all(len(c.split()) <= extractor_mod._MAX_CHUNK_WORDS for c in chunks)
+    assert " ".join(chunks).split() == body.split()  # every word preserved, in order
 
 
 # --------------------------------------------------------------------------- EPUB path
