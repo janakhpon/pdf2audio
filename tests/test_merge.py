@@ -67,6 +67,8 @@ def test_valid_files_invokes_ffmpeg_and_writes_concat_list(tmp_path, monkeypatch
     assert "concat" in captured["command"]
     assert captured["command"][-1].endswith("book_full.mp3")
     assert "-c:a" in captured["command"]  # mp3 -> libmp3lame added
+    assert "-af" in captured["command"]  # loudness normalization applied
+    assert any("loudnorm" in arg for arg in captured["command"])
     assert captured["list_exists_during_run"] is True
     assert "chunk_0001.wav" in captured["list_contents"]
     assert "chunk_0002.wav" in captured["list_contents"]

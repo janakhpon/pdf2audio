@@ -11,6 +11,11 @@ from pdf2audio.config import Config
 from pdf2audio.errors import MergeError
 from pdf2audio.logger import logger
 
+# Normalize the finished audiobook to a consistent loudness so volume does not drift between
+# chunks/chapters. Targets audiobook norms (~ -19 LUFS integrated, -1.5 dBTP peak; ACX allows
+# -18 to -23 LUFS). Single-pass loudnorm is approximate but plenty for spoken-word narration.
+_LOUDNORM_FILTER = "loudnorm=I=-19:TP=-1.5:LRA=11"
+
 
 def merge_audio(
     directory: str, output_format: str = "mp3", valid_files: list[str] | None = None
@@ -61,6 +66,9 @@ def merge_audio(
             "-i",
             list_path,
         ]
+
+        # Normalize loudness across the whole book (requires a re-encode, which loudnorm forces).
+        command.extend(["-af", _LOUDNORM_FILTER])
 
         if output_format.lower() == "mp3":
             command.extend(["-c:a", "libmp3lame", "-q:a", "2"])
