@@ -123,11 +123,12 @@ editor:
   mode: "full" # "full" = faithful full narration (not a summary); "medium"/"short" summarize
 ```
 
-**On dense technical books**, the editor guards against dropped meaning: if the polish comes back
-much shorter than the source (a sign the model summarized rather than narrated), that chunk is read
-from the complete extracted text instead — you'll see a `using the complete raw text` log line.
-Nothing is lost; those chunks just sound rougher (notation and references read aloud). A stronger
-model or a smaller `chunk_size` increases how much gets fully polished.
+**On dense technical books**, the editor is expected to produce a somewhat shorter narration than
+the source (it drops page-only noise — figure/page references, hex/ID dumps, verbatim code) and that
+polished result is used. Only if the polish *collapses* — comes back a tiny fraction of the source,
+a sign the model broke — does that chunk fall back to the complete raw text (a `using the complete
+raw text` log line). Worked-example data like hex values may still be read aloud, since the model
+keeps it as content; a stronger model or a smaller `chunk_size` improves this.
 
 ## Operational Notes
 

@@ -329,7 +329,7 @@ def test_payload_sets_keep_alive_and_context_window(monkeypatch):
 # --------------------------------------------------------------------------- completeness guard
 
 
-def test_full_mode_falls_back_to_raw_when_polish_summarizes(monkeypatch):
+def test_full_mode_falls_back_to_raw_when_polish_collapses(monkeypatch):
     editor = SmartEditor(make_config(editor_mode="full"))
     editor._validated = True
     raw = "word " * 100  # 100 words of source
@@ -338,7 +338,8 @@ def test_full_mode_falls_back_to_raw_when_polish_summarizes(monkeypatch):
         "urlopen",
         lambda req, timeout=None: _FakeResponse({"message": {"content": "a tiny summary."}}),
     )
-    assert editor.process_transcript(raw) == raw  # complete raw text, not the 3-word summary
+    # 3 words of 100 (3%) is a collapse (< the collapse floor) -> use complete raw text
+    assert editor.process_transcript(raw) == raw
     assert editor.last_degraded is True
 
 
@@ -379,6 +380,22 @@ def test_full_mode_keeps_a_faithful_full_length_polish(monkeypatch):
     editor._validated = True
     raw = "word " * 100
     polished = "polished word " * 90  # comparable length -> faithful, kept
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda req, timeout=None: _FakeResponse({"message": {"content": polished}}),
+    )
+    assert editor.process_transcript(raw) == polished.strip()
+    assert editor.last_degraded is False
+
+
+def test_full_mode_keeps_a_cleaned_shorter_polish(monkeypatch):
+    # Normal cleanup makes the narration shorter than the raw (dropped page-noise); that is kept
+    # and used, not discarded — only a collapse below the floor falls back.
+    editor = SmartEditor(make_config(editor_mode="full"))
+    editor._validated = True
+    raw = "word " * 100
+    polished = "clean narration word " * 40  # ~50% of the source words -> kept
     monkeypatch.setattr(
         urllib.request,
         "urlopen",

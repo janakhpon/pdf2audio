@@ -19,11 +19,12 @@ _VALIDATE_TIMEOUT = 5  # seconds — quick reachability check before the (slow) 
 
 _KEEP_ALIVE = "30m"  # keep the model resident across chunks (Ollama default unloads after 5m)
 _TEMPERATURE = 0.4  # faithful, on-task rewrite over creative embellishment
-# Full-mode completeness floor: if the polished output keeps fewer than this fraction of the
-# source's words, the model summarized/dropped content, so we narrate the complete raw text
-# instead. Faithful full-mode rewrites run ~1x the source or longer; gross summaries fall well
-# below this, so the threshold separates them with margin.
-_COMPLETENESS_RATIO = 0.65
+# Full-mode collapse floor: the polished narration is normally shorter than the raw source (it
+# drops page-only noise — figure/page references, hex/ID dumps, verbatim code), so a moderate word
+# drop is expected and desirable, and we use the polished result. Only when it keeps LESS than this
+# fraction has the model actually collapsed/hard-summarized the chunk; then we fall back to the
+# complete raw text. Set low so ordinary cleanup is kept, not discarded.
+_COLLAPSE_RATIO = 0.25
 
 
 # Deterministic backstop for LLM preamble/meta leakage. Even with an explicit "no preamble"
@@ -260,13 +261,13 @@ class SmartEditor:
                     if self.mode == "full":
                         raw_words = len(text.split())
                         out_words = len(polished.split())
-                        if raw_words and out_words < _COMPLETENESS_RATIO * raw_words:
-                            # The rewrite dropped a large share of the source — summarized, not
-                            # narrated. Prefer the complete raw text over a lossy polish.
+                        if raw_words and out_words < _COLLAPSE_RATIO * raw_words:
+                            # Not just cleaned-shorter — the model collapsed/hard-summarized the
+                            # chunk. Fall back to the complete raw text for this one.
                             logger.warning(
-                                f"Polish kept only {out_words}/{raw_words} words "
+                                f"Polish collapsed to {out_words}/{raw_words} words "
                                 f"({out_words / raw_words:.0%}); using the complete raw text for "
-                                f"this chunk to preserve meaning."
+                                f"this chunk."
                             )
                             self.last_degraded = True
                             return text
@@ -332,7 +333,9 @@ class SmartEditor:
             "CRITICAL - FIDELITY: Narrate only the ideas, facts, and examples that are present in "
             "the source text. Do NOT invent examples, analogies, statistics, opinions, or claims "
             "that are not in the source. Your job is to voice the source faithfully, not to "
-            "augment it."
+            "augment it. Keep ALL of the explanation, examples, and reasoning in full — do NOT "
+            "condense, shorten, or paraphrase detail away. The only things you drop are the "
+            "page-layout items listed below; keep everything of substance."
         )
         no_preamble = (
             "CRITICAL - NO PREAMBLE: Begin your response immediately with the actual spoken "
@@ -398,9 +401,11 @@ class SmartEditor:
                 "caption; if it cannot be described from a caption, omit the reference entirely "
                 "and keep the surrounding explanation. Render a table as flowing sentences, not "
                 "cell by cell. Speak mathematical symbols and formulas in words. Do NOT voice "
-                "citation or footnote markers. For example, 'As shown in Figure 3.2 on page 47, "
-                "the tree stays balanced [12].' should be narrated simply as 'The tree stays "
-                "balanced.'"
+                "citation or footnote markers. Do NOT read source code, hex values, or raw "
+                "identifiers aloud verbatim; instead explain in plain sentences what the code does "
+                "and why, and omit bare hex/ID literals. For example, 'As shown in Figure 3.2 on "
+                "page 47, the tree stays balanced [12].' should be narrated simply as 'The tree "
+                "stays balanced.'"
             )
             conventions = (
                 "AUDIOBOOK CONVENTIONS: When the text opens with a chapter or section title, "
