@@ -123,6 +123,12 @@ editor:
   mode: "full" # "full" = faithful full narration (not a summary); "medium"/"short" summarize
 ```
 
+**On dense technical books**, the editor guards against dropped meaning: if the polish comes back
+much shorter than the source (a sign the model summarized rather than narrated), that chunk is read
+from the complete extracted text instead — you'll see a `using the complete raw text` log line.
+Nothing is lost; those chunks just sound rougher (notation and references read aloud). A stronger
+model or a smaller `chunk_size` increases how much gets fully polished.
+
 ## Operational Notes
 
 - **Disk space** — the pipeline monitors free space mid-run and halts cleanly if it drops below 500 MB
