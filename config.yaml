@@ -5,7 +5,7 @@ source:
   # Path can be a single file, a directory, or an array of specific files.
   # Examples:
   # path: "books/"
-  path: "books/kumar-aws-system-design-enterprise-solutions-2025.pdf"
+  path: "books/build-fine-tune-small-language-model-programmers.pdf"
   # path:
   #   - "books/part1.pdf"
   #   - "books/part2.pdf"
