@@ -228,6 +228,23 @@ def test_sanitize_for_tts_strips_citation_markers_but_keeps_indices():
     assert "[i]" in pipeline.sanitize_for_tts("the element [i] is next")
 
 
+def test_sanitize_for_tts_drops_fenced_code_but_keeps_surrounding_prose():
+    out = pipeline.sanitize_for_tts(
+        "Consider the code ```c\nint32_t a[16];\nfor (int i=0;i<16;i++){}\n``` then continue."
+    )
+    assert "int32_t" not in out and "```" not in out  # verbatim code block dropped
+    assert "c\n" not in out  # the fence language tag does not leak as bare text
+    assert "Consider the code" in out and "then continue." in out  # prose kept
+    # single-backtick inline identifiers are kept as listenable words, not dropped
+    assert "resize()" in pipeline.sanitize_for_tts("Call `resize()` on overflow.")
+
+
+def test_sanitize_for_tts_drops_bare_hex_literals():
+    out = pipeline.sanitize_for_tts("The value 0x162f5a33 hashes to 0xDB608.")
+    assert "0x" not in out.lower()  # no hex read aloud
+    assert "hashes to" in out  # surrounding prose intact
+
+
 def test_sanitize_for_tts_descaffolds_pipe_table():
     out = pipeline.sanitize_for_tts("| Name | Age |\n|------|-----|\n| Bob | 30 |")
     assert "|" not in out  # no cell dividers voiced as "vertical bar"
