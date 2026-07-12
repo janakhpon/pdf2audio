@@ -53,12 +53,18 @@ def sanitize_for_tts(text: str) -> str:
     # <!-- formula-not-decoded -->, <!-- missing-* -->) BEFORE the dash rule, or their "--" gets
     # turned into commas and voiced as garbage.
     text = re.sub(r"<!--.*?-->", " ", text, flags=re.DOTALL)
+    # Fenced code blocks (```lang ... ```): verbatim source is unlistenable, so drop the whole
+    # block. Must run BEFORE the lone-backtick rule below, which would otherwise strip the fences
+    # and leave the code body (and its language tag) as bare spoken text.
+    text = re.sub(r"`{3,}[^\n]*\n?.*?`{3,}", " ", text, flags=re.DOTALL)
     text = re.sub(r"!\[[^\]]*\]\([^)]*\)", " ", text)  # ![alt](url) image -> drop (incl. the !)
     text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)  # [link](url) -> link text
     # Bare citation/footnote markers ("Smith [12]" -> "Smith"). Require a leading space so attached
     # array indices (a[0], arr[5]) and non-numeric brackets ([i]) are left untouched.
     text = re.sub(r"\s+\[\d+\]", "", text)
     text = re.sub(r"https?://\S+", " ", text)  # bare URL -> drop (annoying to hear spelled out)
+    # Bare hex literals (0x162f5a33) have no spoken value.
+    text = re.sub(r"\b0x[0-9a-fA-F]+\b", " ", text)
     # Table-of-contents / index dot leaders and their page numbers ("Title..... 80"). 4+ dots so a
     # normal "..." ellipsis is left alone.
     text = re.sub(r"\.{4,}\s*\d*", " ", text)
