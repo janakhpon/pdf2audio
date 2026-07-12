@@ -23,6 +23,8 @@ editor:
   preserve_context: true  # Dynamically passes the summary of the previous chunk into the next chunk to guarantee coherent narrative flow across 1,000+ page books
   url: "http://localhost:11434"
   timeout: 600            # Timeout in seconds for LLM generation requests
+  num_ctx: 8192           # Context window (tokens), held constant for the run. 8192 comfortably
+                          # holds one chunk plus its rewrite. Raise only if you increase chunk size.
 
 # Audio Generation settings
 audio:

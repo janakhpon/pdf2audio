@@ -30,6 +30,8 @@ class Config:
     out_audio_dir: Path
     out_transcripts_dir: Path
     save_transcripts: bool
+    # Ollama context window (tokens), held constant for the whole run. Optional; defaults below.
+    editor_num_ctx: int = 8192
 
 
 _PACKAGE_ROOT = Path(__file__).parent.parent
@@ -37,6 +39,7 @@ _PACKAGE_ROOT = Path(__file__).parent.parent
 SUPPORTED_AUDIO_FORMATS = {"mp3", "m4a", "wav"}
 VALID_EDITOR_MODES = {"short", "medium", "full"}
 MAX_CHUNK_SIZE = 10_000  # guard against an accidental huge value causing OOM at extraction
+MIN_NUM_CTX = 512  # below this the model can't hold a chunk + its rewrite
 
 
 def load_config(config_path: str | Path | None = None) -> Config:
@@ -90,6 +93,13 @@ def load_config(config_path: str | Path | None = None) -> Config:
         raise ConfigError(f"editor.timeout must be > 0, got {editor_timeout}")
 
     try:
+        editor_num_ctx = int(data.get("editor", {}).get("num_ctx", 8192))
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"editor.num_ctx must be an integer: {exc}") from exc
+    if editor_num_ctx < MIN_NUM_CTX:
+        raise ConfigError(f"editor.num_ctx must be >= {MIN_NUM_CTX}, got {editor_num_ctx}")
+
+    try:
         audio_speed = float(data.get("audio", {}).get("speed", 1.0))
     except (TypeError, ValueError) as exc:
         raise ConfigError(f"audio.speed must be a number: {exc}") from exc
@@ -116,6 +126,7 @@ def load_config(config_path: str | Path | None = None) -> Config:
         editor_preserve_context=data.get("editor", {}).get("preserve_context", True),
         editor_url=editor_url,
         editor_timeout=editor_timeout,
+        editor_num_ctx=editor_num_ctx,
         audio_model_path=data.get("audio", {}).get("model_path", "assets/models/kokoro-v1.0.onnx"),
         audio_voices_path=data.get("audio", {}).get("voices_path", "assets/models/voices-v1.0.bin"),
         audio_voice=data.get("audio", {}).get("voice", "af_heart"),

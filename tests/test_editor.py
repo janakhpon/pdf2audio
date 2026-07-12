@@ -9,12 +9,7 @@ from pathlib import Path
 
 import pytest
 from pdf2audio.config import Config
-from pdf2audio.editor import (
-    _MAX_NUM_CTX,
-    _MIN_NUM_CTX,
-    SmartEditor,
-    _num_ctx_for_chunk_size,
-)
+from pdf2audio.editor import SmartEditor
 from pdf2audio.errors import EditorError
 
 
@@ -292,18 +287,9 @@ def test_process_transcript_strips_preamble_from_model_output(monkeypatch):
 # --------------------------------------------------------------------------- num_ctx (per run)
 
 
-def test_num_ctx_scales_with_chunk_size_and_is_power_of_two():
-    small = _num_ctx_for_chunk_size(1)
-    large = _num_ctx_for_chunk_size(30)
-    assert small == _MIN_NUM_CTX  # tiny chunk floored to the minimum
-    assert large > small
-    assert large & (large - 1) == 0  # power of two
-    assert _num_ctx_for_chunk_size(6) == 8192  # the default lands on the smoke-tested window
-
-
-def test_num_ctx_clamped_to_bounds():
-    assert _num_ctx_for_chunk_size(1) == _MIN_NUM_CTX
-    assert _num_ctx_for_chunk_size(10_000) == _MAX_NUM_CTX  # huge chunk_size capped
+def test_num_ctx_comes_from_config():
+    assert SmartEditor(make_config()).num_ctx == 8192  # default
+    assert SmartEditor(make_config(editor_num_ctx=16384)).num_ctx == 16384  # override
 
 
 def test_num_ctx_is_constant_across_chunks(monkeypatch):
@@ -336,7 +322,7 @@ def test_payload_sets_keep_alive_and_context_window(monkeypatch):
 
     payload = captured["payload"]
     assert payload["keep_alive"]  # model stays resident between chunks
-    assert payload["options"]["num_ctx"] >= _MIN_NUM_CTX
+    assert payload["options"]["num_ctx"] == editor.num_ctx
     assert 0.0 <= payload["options"]["temperature"] <= 1.0
 
 

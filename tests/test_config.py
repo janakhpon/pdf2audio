@@ -50,6 +50,21 @@ def test_load_valid_config(tmp_path):
     assert isinstance(cfg.source_path, Path)
 
 
+def test_editor_num_ctx_default(tmp_path):
+    assert load_config(_write_config(tmp_path, _VALID_BODY)).editor_num_ctx == 8192
+
+
+def test_editor_num_ctx_override(tmp_path):
+    body = _VALID_BODY.replace("timeout: 600", "timeout: 600\n      num_ctx: 16384")
+    assert load_config(_write_config(tmp_path, body)).editor_num_ctx == 16384
+
+
+def test_editor_num_ctx_too_small_raises(tmp_path):
+    body = _VALID_BODY.replace("timeout: 600", "timeout: 600\n      num_ctx: 100")
+    with pytest.raises(ConfigError, match="num_ctx must be >="):
+        load_config(_write_config(tmp_path, body))
+
+
 def test_missing_config_file_raises(tmp_path):
     with pytest.raises(ConfigError, match="not found"):
         load_config(tmp_path / "does_not_exist.yaml")
