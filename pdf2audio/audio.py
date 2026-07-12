@@ -14,6 +14,12 @@ from pdf2audio.errors import AudioError
 from pdf2audio.logger import logger
 
 _DEFAULT_SAMPLE_RATE = 24000  # kokoro's output rate; used only for the empty-output fallback
+_MAX_TTS_CHARS = 160  # per-segment cap; margin under kokoro's 510-phoneme limit
+
+
+class _SegmentTooLong(Exception):
+    """A segment exceeded kokoro's phoneme limit; split it and retry the halves."""
+
 
 # kokoro encodes the language in the first letter of the voice name; map it to the espeak
 # language code that kokoro-onnx feeds its g2p phonemizer. Passing the wrong lang phonemizes
@@ -123,7 +129,7 @@ class AudioEngine:
         return chunks
 
     def _synthesize(self, chunk: str) -> tuple[np.ndarray, int] | None:
-        """Synthesize one text chunk, or None if it has no pronounceable content."""
+        """Synthesize one text segment, or None if it has no pronounceable content."""
         try:
             samples, sr = self.kokoro.create(
                 chunk,
@@ -139,6 +145,26 @@ class AudioEngine:
                 logger.debug(f"Skipped unpronounceable chunk: {chunk[:30]}...")
                 return None
             raise AudioError(f"TTS synthesis failed for chunk '{chunk[:30]}...': {exc}") from exc
+        except (IndexError, AssertionError) as exc:
+            # A dense segment exceeded kokoro's 510-phoneme cap; kokoro truncates then indexes
+            # out of bounds. Signal the caller to split this segment and retry the halves.
+            raise _SegmentTooLong from exc
+
+    def _synthesize_parts(self, chunk: str) -> list[tuple[np.ndarray, int]]:
+        """Synthesize a segment, splitting it in half and retrying if it trips kokoro's phoneme
+        limit, so one dense segment never fails the chunk. Returns zero or more audio parts."""
+        try:
+            result = self._synthesize(chunk)
+            return [result] if result is not None else []
+        except _SegmentTooLong:
+            words = chunk.split()
+            if len(words) <= 1:
+                logger.warning(f"Skipping a segment too dense to synthesize: {chunk[:40]}...")
+                return []
+            mid = len(words) // 2
+            left = " ".join(words[:mid])
+            right = " ".join(words[mid:])
+            return self._synthesize_parts(left) + self._synthesize_parts(right)
 
     def generate(self, text: str, output_path: Path) -> None:
         """Synthesize `text` to a single wav, streaming segments to disk (bounded memory).
@@ -157,19 +183,16 @@ class AudioEngine:
         writer: sf.SoundFile | None = None
         published = False
         try:
-            for chunk in self._chunk_text(text, max_chars=200):
+            for chunk in self._chunk_text(text, max_chars=_MAX_TTS_CHARS):
                 chunk = chunk.strip()
                 if not chunk:
                     continue
-                result = self._synthesize(chunk)
-                if result is None:
-                    continue
-                samples, sr = result
-                if writer is None:
-                    writer = sf.SoundFile(
-                        str(temp_final), mode="w", samplerate=sr, channels=1, format="WAV"
-                    )
-                writer.write(samples)
+                for samples, sr in self._synthesize_parts(chunk):
+                    if writer is None:
+                        writer = sf.SoundFile(
+                            str(temp_final), mode="w", samplerate=sr, channels=1, format="WAV"
+                        )
+                    writer.write(samples)
 
             if writer is None:
                 # No segment produced audio. This is expected for punctuation-only text, but for
