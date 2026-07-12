@@ -24,26 +24,6 @@ _TEMPERATURE = 0.4  # faithful, on-task rewrite over creative embellishment
 # instead. Faithful full-mode rewrites run ~1x the source or longer; gross summaries fall well
 # below this, so the threshold separates them with margin.
 _COMPLETENESS_RATIO = 0.65
-_MIN_NUM_CTX = 4096
-_MAX_NUM_CTX = 32768  # bound the KV cache so a huge chunk can't blow up memory
-
-
-def _num_ctx_for_chunk_size(chunk_size: int) -> int:
-    """Pick one context window for the whole run, sized to hold a chunk plus its rewrite.
-
-    Ollama's default num_ctx (~2-4k tokens) would silently truncate our multi-KB chunk prompts
-    and drop source content. But num_ctx must stay CONSTANT across calls: Ollama reloads the
-    model (~seconds) whenever it changes, which would fight keep_alive and discard the cached
-    system-prompt prefix. So size it once from chunk_size rather than per-chunk.
-
-    Budget generously — roughly 900 tokens per chunk_size unit (the chunk plus its full-mode
-    rewrite) plus ~2000 fixed for the system prompt and context slice — then round up to a power
-    of two for headroom and clamp. At the default chunk_size=6 this lands on 8192, the window the
-    smoke tests ran cleanly on; larger chunk sizes scale up.
-    """
-    est_tokens = chunk_size * 900 + 2000
-    ctx = 1 << max(1, est_tokens - 1).bit_length()  # next power of two >= est_tokens
-    return min(max(ctx, _MIN_NUM_CTX), _MAX_NUM_CTX)
 
 
 # Deterministic backstop for LLM preamble/meta leakage. Even with an explicit "no preamble"
@@ -96,8 +76,8 @@ class SmartEditor:
         self.preserve_context = config.editor_preserve_context
         self.timeout = config.editor_timeout
         # One context window for the whole run — kept constant so Ollama never reloads the model
-        # between chunks (a changing num_ctx forces a ~seconds reload; see _num_ctx_for_chunk_size).
-        self.num_ctx = _num_ctx_for_chunk_size(config.chunk_size)
+        # between chunks (a changing num_ctx forces a ~seconds reload).
+        self.num_ctx = config.editor_num_ctx
         self._previous_context: str | None = None
         self._validated = False
         # Degradation tracking: last_degraded reflects whether the most recent chunk was left
