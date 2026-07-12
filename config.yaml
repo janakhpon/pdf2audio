@@ -10,7 +10,9 @@ source:
   #   - "books/part1.pdf"
   #   - "books/part2.pdf"
   # path: "/Users/zinmin/Downloads/system-design-interview-bytebytego"
-  chunk_size: 6           # HTML: number of files per chunk. PDF: markdown block groups × 10.
+  chunk_size: 6           # Coarse grouping (HTML: files/chunk; PDF: markdown block groups × 10).
+                          # A hard ~1200-word cap then splits any oversized result so the editor
+                          # can rewrite each chunk faithfully instead of summarizing it.
 
 # Transcription and Smart Editor settings
 editor:
@@ -23,8 +25,10 @@ editor:
   preserve_context: true  # Dynamically passes the summary of the previous chunk into the next chunk to guarantee coherent narrative flow across 1,000+ page books
   url: "http://localhost:11434"
   timeout: 600            # Timeout in seconds for LLM generation requests
-  num_ctx: 8192           # Context window (tokens), held constant for the run. 8192 comfortably
-                          # holds one chunk plus its rewrite. Raise only if you increase chunk size.
+  num_ctx: 8192           # Ollama context window (tokens), constant per run. Sized to the ~1200-word
+                          # chunk cap: chunk + rewrite + prompt is ~5-6k tokens, so 8192 fits with
+                          # headroom (KV cache ~1.5GB). qwen2.5:14b handles 32k, but a bigger window
+                          # here only wastes RAM. Raise only if you raise the chunk word cap.
 
 # Audio Generation settings
 audio:
