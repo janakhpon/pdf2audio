@@ -123,12 +123,13 @@ editor:
   mode: "full" # "full" = faithful full narration (not a summary); "medium"/"short" summarize
 ```
 
-**On dense technical books**, the editor is expected to produce a somewhat shorter narration than
-the source (it drops page-only noise — figure/page references, hex/ID dumps, verbatim code) and that
-polished result is used. Only if the polish *collapses* — comes back a tiny fraction of the source,
-a sign the model broke — does that chunk fall back to the complete raw text (a `using the complete
-raw text` log line). Worked-example data like hex values may still be read aloud, since the model
-keeps it as content; a stronger model or a smaller `chunk_size` improves this.
+**On dense technical books**, the editor is expected to produce a shorter narration than the source
+(it drops page-only noise — figure/page references, hex/ID dumps, verbatim code), and that polished
+result is trusted and used — including legitimately short renderings like an intro lead-in or a
+chapter summary. The complete raw text is used only when the polish is genuinely broken: empty,
+errored, truncated, or a near-empty fragment (a `using the complete raw text` log line). Worked-example
+data like hex values may still be read aloud, since the model keeps it as content; a stronger model or
+a smaller `chunk_size` improves this.
 
 **Table-of-contents and index pages are skipped** — they are dot-leaders and page numbers with no
 spoken value, so they are detected and not narrated (like a real audiobook).
