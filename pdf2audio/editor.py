@@ -321,6 +321,13 @@ class SmartEditor:
             "Write only in full, flowing prose sentences and natural paragraphs. "
             "Use plain punctuation only: commas, periods, colons, semicolons, and question marks."
         )
+        output_shape = (
+            "CRITICAL - SOUND NATURAL: Everything you output must sound natural read aloud. Output "
+            "ONLY flowing spoken paragraphs. NEVER output a list, a table, a table of contents, a "
+            "run of headings or titles, a string of page numbers, dot leaders, or a block of "
+            "symbols/code. If the source is such a structure, either express it in one or two "
+            "spoken sentences or leave it out — never reproduce its visual layout."
+        )
         voice_constraint = (
             "VOICE AND TONE: "
             "Write as a distinguished professor and leading expert in the field, "
@@ -364,7 +371,7 @@ class SmartEditor:
             )
         rules = (
             f"{no_preamble} {no_meta} {fidelity_constraint} {context_note}"
-            f"{voice_constraint} {lang_constraint} {formatting_constraint}"
+            f"{voice_constraint} {lang_constraint} {formatting_constraint} {output_shape}"
         )
 
         if self.mode == "short":

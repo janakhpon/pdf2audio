@@ -170,12 +170,10 @@ class AudioEngine:
         """Synthesize `text` to a single wav, streaming segments to disk (bounded memory).
 
         Segments are written incrementally into a temp file, then atomically renamed, so a
-        partial or crashed write never leaves a file that looks complete.
+        partial or crashed write never leaves a file that looks complete. Empty text (e.g. a
+        skipped table-of-contents chunk) still publishes a valid empty wav so the chunk counts as
+        done and the final merge stays consistent.
         """
-        if not text.strip():
-            logger.warning("Empty text provided for audio generation.")
-            return
-
         output_path.parent.mkdir(parents=True, exist_ok=True)
         final_path = output_path.with_suffix(".wav")  # intermediate chunks are always wav
         temp_final = output_path.with_suffix(".wav.tmp")

@@ -34,6 +34,13 @@ _MAX_TTS_RETRIES = 3
 _QUEUE_MAXSIZE = 3  # cap buffered chunks awaiting TTS
 
 
+def is_structural_noise(text: str) -> bool:
+    """True for a table-of-contents / index / list-of-figures page: dominated by dot leaders and
+    page numbers, which have no spoken value. Such chunks are skipped (not narrated). Ordinary
+    prose never has several dot-leader runs, so this does not fire on real content."""
+    return len(re.findall(r"\.{4,}", text)) >= 3
+
+
 def sanitize_for_tts(text: str) -> str:
     """Turn residual visual/markup cruft into clean spoken text before synthesis.
 
@@ -52,6 +59,9 @@ def sanitize_for_tts(text: str) -> str:
     # array indices (a[0], arr[5]) and non-numeric brackets ([i]) are left untouched.
     text = re.sub(r"\s+\[\d+\]", "", text)
     text = re.sub(r"https?://\S+", " ", text)  # bare URL -> drop (annoying to hear spelled out)
+    # Table-of-contents / index dot leaders and their page numbers ("Title..... 80"). 4+ dots so a
+    # normal "..." ellipsis is left alone.
+    text = re.sub(r"\.{4,}\s*\d*", " ", text)
     # Pipe tables: drop separator rows, then read remaining cells as a short spoken list.
     text = re.sub(r"(?m)^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$", " ", text)  # |---|:--:| separator rows
     text = re.sub(r"\s*\|\s*", ", ", text)  # cell dividers -> comma pause
@@ -103,6 +113,7 @@ def process_document(doc_path: Path, config: Config) -> None:
 
     chunks_processed = 0
     degraded_chunks = 0
+    skipped_chunks = 0
     halted_low_disk = False
     job_queue: queue.Queue = queue.Queue(maxsize=_QUEUE_MAXSIZE)
 
@@ -177,10 +188,18 @@ def process_document(doc_path: Path, config: Config) -> None:
 
                 try:
                     store.mark(doc_hash, chunks_processed, ChunkStatus.PROCESSING)
-                    polished_text = editor.process_transcript(raw_text)
-                    if editor.last_degraded:
-                        degraded_chunks += 1
-                    clean_text = sanitize_for_tts(polished_text)
+                    if is_structural_noise(raw_text):
+                        # A table-of-contents / index page: not narratable, skip it (empty audio).
+                        logger.info(
+                            f"Chunk {chunks_processed}: table-of-contents/index page; not narrated."
+                        )
+                        skipped_chunks += 1
+                        clean_text = ""
+                    else:
+                        polished_text = editor.process_transcript(raw_text)
+                        if editor.last_degraded:
+                            degraded_chunks += 1
+                        clean_text = sanitize_for_tts(polished_text)
                     if config.save_transcripts:
                         transcript_out.write_text(clean_text, encoding="utf-8")
                     job_queue.put((chunks_processed, clean_text, audio_out))
@@ -206,6 +225,11 @@ def process_document(doc_path: Path, config: Config) -> None:
                 f"{degraded_chunks} of {chunks_processed} chunk(s) used the complete raw text "
                 f"(editor unavailable, or its polish dropped/truncated content) to keep the "
                 f"narration complete. Re-run once Ollama is healthy to re-polish them."
+            )
+        if skipped_chunks:
+            logger.info(
+                f"{skipped_chunks} of {chunks_processed} chunk(s) were table-of-contents/index "
+                f"pages and were not narrated."
             )
 
         pending = store.pending_count(doc_hash)

@@ -205,10 +205,20 @@ def test_unsupported_file_is_a_noop(tmp_path, monkeypatch):
         ("visit https://example.com/path now", "visit now"),  # bare URL dropped
         ("done. -- Next point", "done. Next point"),  # no orphan comma after a sentence end
         ("the ratio \\( n \\) to \\( k \\)", "the ratio n to k"),  # LaTeX math delimiters dropped
+        ("Hash Tables.......... 12", "Hash Tables"),  # TOC dot leaders + page number dropped
+        ("wait... really?", "wait... really?"),  # a normal ellipsis (3 dots) is preserved
     ],
 )
 def test_sanitize_for_tts(raw, expected):
     assert pipeline.sanitize_for_tts(raw) == expected
+
+
+def test_is_structural_noise_detects_toc_but_not_prose():
+    toc = "Intro..... 1, Hashing..... 12, Bloom Filters..... 30, Trees..... 47"
+    prose = "Hash tables store key-value pairs. They offer constant-time lookups on average."
+    assert pipeline.is_structural_noise(toc) is True
+    assert pipeline.is_structural_noise(prose) is False
+    assert pipeline.is_structural_noise("a normal sentence... with an ellipsis.") is False
 
 
 def test_sanitize_for_tts_strips_citation_markers_but_keeps_indices():
