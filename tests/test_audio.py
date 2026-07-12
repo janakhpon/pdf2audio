@@ -164,10 +164,15 @@ def test_generate_with_no_pronounceable_content_writes_empty_wav(engine, tmp_pat
     assert len(data) == 0
 
 
-def test_generate_empty_text_is_a_noop(engine, tmp_path):
+def test_generate_empty_text_writes_a_valid_empty_wav(engine, tmp_path):
+    # A skipped chunk (e.g. a table-of-contents page) is narrated as empty text; it must still
+    # publish a valid empty wav so the chunk counts as done and the final merge stays consistent.
     out = tmp_path / "audio" / "chunk_0004"
     engine.generate("   ", out)
-    assert not out.with_suffix(".wav").exists()
+    wav = out.with_suffix(".wav")
+    assert wav.exists()
+    data, _ = sf.read(str(wav))
+    assert len(data) == 0
 
 
 def test_generate_splits_segment_that_trips_phoneme_limit(engine, tmp_path):

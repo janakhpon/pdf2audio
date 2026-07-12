@@ -130,6 +130,9 @@ a sign the model broke — does that chunk fall back to the complete raw text (a
 raw text` log line). Worked-example data like hex values may still be read aloud, since the model
 keeps it as content; a stronger model or a smaller `chunk_size` improves this.
 
+**Table-of-contents and index pages are skipped** — they are dot-leaders and page numbers with no
+spoken value, so they are detected and not narrated (like a real audiobook).
+
 ## Operational Notes
 
 - **Disk space** — the pipeline monitors free space mid-run and halts cleanly if it drops below 500 MB

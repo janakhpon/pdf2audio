@@ -191,6 +191,14 @@ def test_build_prompt_forbids_preamble_and_meta(mode):
     assert "and nothing else" in prompt
 
 
+@pytest.mark.parametrize("mode", ["short", "medium", "full"])
+def test_build_prompt_has_output_shape_safeguard(mode):
+    # guards against unnatural, audiobook-unsuitable output shapes (lists/tables/TOC/heading runs)
+    prompt = SmartEditor(make_config(editor_mode=mode))._build_prompt()
+    assert "SOUND NATURAL" in prompt
+    assert "table of contents" in prompt
+
+
 # --------------------------------------------------------------------------- _strip_artifacts
 
 
