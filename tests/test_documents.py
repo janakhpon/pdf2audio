@@ -106,6 +106,16 @@ def test_document_hash_changes_with_config(tmp_path):
     )
 
 
+def test_document_hash_changes_with_chunk_size(tmp_path):
+    # chunk_size moves the chunk boundaries, so it MUST key the state: a re-run after changing it
+    # gets a fresh DB + audio dir instead of silently reusing the old chunking's audio.
+    doc = tmp_path / "book.pdf"
+    doc.write_bytes(b"same bytes")
+    assert document_hash(doc, _make_config(chunk_size=5)) != document_hash(
+        doc, _make_config(chunk_size=6)
+    )
+
+
 def test_document_hash_of_html_dir_uses_names(tmp_path):
     (tmp_path / "1.html").write_text("<p>one</p>")
     (tmp_path / "2.html").write_text("<p>two</p>")

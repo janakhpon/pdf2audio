@@ -99,6 +99,81 @@ def _make_doc(tmp_path: Path) -> Path:
     return doc
 
 
+class _TocExtractor:
+    # First chunk is a dense table-of-contents page; second is real prose.
+    chunks = ["Intro..... 1 Methods..... 12 Results..... 34 Refs..... 88", "real prose here"]
+
+    def __init__(self, chunk_size: int = 5) -> None:
+        pass
+
+    def process_file(self, doc_path: Path):
+        yield from _TocExtractor.chunks
+
+
+def test_toc_chunk_is_skipped_not_narrated(tmp_path, monkeypatch):
+    seen: list[str] = []
+
+    class _SpyEditor(_FakeEditor):
+        def process_transcript(self, text: str) -> str:
+            seen.append(text)
+            return super().process_transcript(text)
+
+    doc = _make_doc(tmp_path)
+    config = _make_config(tmp_path, doc)
+    calls, merges = _install_fakes(monkeypatch, extractor=_TocExtractor, editor=_SpyEditor)
+
+    pipeline.process_document(doc, config)
+
+    # The TOC chunk is skipped: synthesized as empty text, and the editor is never asked to polish
+    # it. The prose chunk is narrated normally, and the merge still fires.
+    assert calls == ["", "real prose here"]
+    assert seen == ["real prose here"]
+    assert len(merges) == 1
+
+
+def test_degraded_chunk_counted_and_summary_warned(tmp_path, monkeypatch, caplog):
+    import logging
+
+    class _DegradingEditor(_FakeEditor):
+        def process_transcript(self, text: str) -> str:
+            self.last_degraded = True  # every chunk falls back to raw
+            return text
+
+    doc = _make_doc(tmp_path)
+    config = _make_config(tmp_path, doc)
+    _install_fakes(monkeypatch, editor=_DegradingEditor)
+
+    with caplog.at_level(logging.WARNING):
+        pipeline.process_document(doc, config)
+
+    assert any("raw text" in r.getMessage().lower() for r in caplog.records)
+
+
+def test_worker_survives_a_throwing_failed_mark(tmp_path, monkeypatch):
+    # Even if the FAILED-mark itself throws (e.g. a locked SQLite), the worker must not die before
+    # calling task_done — otherwise the main thread would block forever on the bounded queue.
+    monkeypatch.setattr(pipeline, "_MAX_TTS_RETRIES", 1)  # no backoff sleeps in the test
+
+    def boom(text, output_path):
+        raise RuntimeError("tts blew up")
+
+    _install_fakes(monkeypatch, generate=boom)
+
+    real_mark = ChunkStateStore.mark
+
+    def flaky_mark(self, doc_hash, idx, status):
+        if status is ChunkStatus.FAILED:
+            raise RuntimeError("db locked")
+        return real_mark(self, doc_hash, idx, status)
+
+    monkeypatch.setattr(ChunkStateStore, "mark", flaky_mark)
+
+    doc = _make_doc(tmp_path)
+    config = _make_config(tmp_path, doc)
+    # Must return (not hang, not raise) despite every chunk failing AND the FAILED-mark throwing.
+    pipeline.process_document(doc, config)
+
+
 def test_happy_path_marks_all_done_and_merges(tmp_path, monkeypatch):
     doc = _make_doc(tmp_path)
     config = _make_config(tmp_path, doc)
@@ -243,6 +318,25 @@ def test_sanitize_for_tts_drops_bare_hex_literals():
     out = pipeline.sanitize_for_tts("The value 0x162f5a33 hashes to 0xDB608.")
     assert "0x" not in out.lower()  # no hex read aloud
     assert "hashes to" in out  # surrounding prose intact
+
+
+def test_sanitize_for_tts_keeps_inline_pipe_but_despipes_table_rows():
+    # Pipes in prose/math mean "given" / set-builder / absolute value, NOT a table cell divider.
+    assert "P(A|B)" in pipeline.sanitize_for_tts("the conditional P(A|B) is read given.")
+    assert "{x | x>0}" in pipeline.sanitize_for_tts("the set {x | x>0} of positives")
+    assert "|x|" in pipeline.sanitize_for_tts("the absolute value |x| is non-negative")  # 2 pipes!
+    # A real markdown row (leading pipe, 2+ cells) still becomes a spoken comma list.
+    row = pipeline.sanitize_for_tts("| Alice | 30 | NYC |")
+    assert "|" not in row and "Alice" in row and "30" in row
+
+
+def test_is_structural_noise_density_not_absolute_count():
+    # A pure TOC page (dot-leaders dense vs words) is flagged.
+    toc = "Intro..... 1 Methods..... 12 Results..... 34 Refs..... 88"
+    assert pipeline.is_structural_noise(toc) is True
+    # A mostly-prose chunk that merely straddles a few stray leaders is NOT dropped whole.
+    prose = ("This chapter explains the method in careful detail. " * 40) + "See TOC..... 3"
+    assert pipeline.is_structural_noise(prose) is False
 
 
 def test_sanitize_for_tts_descaffolds_pipe_table():

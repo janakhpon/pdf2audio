@@ -223,10 +223,25 @@ def test_empty_file_raises(tmp_path):
         list(DocumentExtractor().process_file(empty))
 
 
+def test_epub_decompression_bomb_rejected(tmp_path, monkeypatch):
+    import zipfile
+
+    from pdf2audio import extractor as extractor_mod
+
+    # A valid zip whose decompressed payload exceeds the cap must be rejected before ebooklib loads
+    # it into memory (the on-disk size cap only bounds the compressed bytes).
+    book = tmp_path / "bomb.epub"
+    with zipfile.ZipFile(book, "w") as zf:
+        zf.writestr("big.txt", b"x" * 10_000)
+    monkeypatch.setattr(extractor_mod, "_MAX_EPUB_UNCOMPRESSED_BYTES", 100)
+    with pytest.raises(ExtractionError, match="decompresses to"):
+        list(extractor_mod.DocumentExtractor().process_file(book))
+
+
 def test_corrupt_epub_raises_extraction_error(tmp_path):
-    # A tiny non-zip blob: ebooklib cannot parse it, and _process_epub wraps the
-    # untyped failure in our typed ExtractionError.
+    # A tiny non-zip blob: the decompressed-size guard opens the EPUB as a zip first, so a non-zip
+    # is rejected there with a clear ExtractionError before ebooklib is ever called.
     bad = tmp_path / "broken.epub"
     bad.write_bytes(b"not really an epub")
-    with pytest.raises(ExtractionError, match="Could not read EPUB"):
+    with pytest.raises(ExtractionError, match="Not a valid EPUB"):
         list(DocumentExtractor().process_file(bad))
