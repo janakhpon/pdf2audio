@@ -156,6 +156,59 @@ def test_merge_module_importable_without_running_ffmpeg():
     assert callable(merge_mod.merge_audio)
 
 
+def test_timeout_scales_with_input_size():
+    floor = merge_mod._MERGE_TIMEOUT_FLOOR
+    rate = merge_mod._LOUDNORM_BYTES_PER_SEC
+    # Small books stay at the floor; a multi-GB book gets a proportionally larger budget.
+    assert merge_mod._timeout_for(0, rate) == floor
+    assert merge_mod._timeout_for(1024, rate) == floor
+    big = 3237 * 1024**2  # ~3.2 GB (the book that timed out at the old fixed 600 s)
+    assert merge_mod._timeout_for(big, rate) > floor
+    assert merge_mod._timeout_for(big, rate) == -(-big // rate)  # ceil division
+
+
+def test_falls_back_to_plain_merge_when_loudnorm_times_out(tmp_path, monkeypatch):
+    # A book too large to loudness-normalize in time must still produce an audiobook (un-normalized)
+    # rather than failing outright and discarding hours of TTS work.
+    book_dir = tmp_path / "book"
+    book_dir.mkdir()
+    f = book_dir / "chunk_0001.wav"
+    f.write_bytes(b"\0" * 1024)
+
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        if len(calls) == 1:
+            raise subprocess.TimeoutExpired(cmd=command, timeout=kwargs.get("timeout"))
+        return _FakeCompleted(returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    merge_audio(str(book_dir), "mp3", valid_files=[str(f)])
+
+    assert len(calls) == 2
+    # First attempt is loudness-normalized; the fallback drops the filter but still encodes to mp3.
+    assert "-af" in calls[0] and any("loudnorm" in a for a in calls[0])
+    assert "-af" not in calls[1] and not any("loudnorm" in a for a in calls[1])
+    assert "-c:a" in calls[1] and calls[1][-1].endswith("book_full.mp3")
+    assert not (book_dir / "concat_list.txt").exists()  # still cleaned up
+
+
+def test_raises_when_even_the_plain_fallback_times_out(tmp_path, monkeypatch):
+    book_dir = tmp_path / "book"
+    book_dir.mkdir()
+    f = book_dir / "chunk_0001.wav"
+    f.write_bytes(b"\0" * 1024)
+
+    def always_timeout(command, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=command, timeout=kwargs.get("timeout"))
+
+    monkeypatch.setattr(subprocess, "run", always_timeout)
+    with pytest.raises(MergeError):
+        merge_audio(str(book_dir), "mp3", valid_files=[str(f)])
+    assert not (book_dir / "concat_list.txt").exists()
+
+
 def test_merge_all_raises_when_a_document_fails(tmp_path, monkeypatch):
     # A failed per-document merge must surface as MergeError so `pdf2audio merge` exits non-zero
     # instead of falsely reporting success.
