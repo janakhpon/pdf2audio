@@ -137,8 +137,9 @@ spoken value, so they are detected and not narrated (like a real audiobook).
 ## Operational Notes
 
 - **Disk space** — the pipeline monitors free space mid-run and halts cleanly if it drops below 500 MB
-- **Chunk size** — `source.chunk_size` controls how many files/blocks are grouped into one audio chunk. Set to `1` for one audio file per chapter
-- **Output** — audio chunks are automatically merged into a single MP3/M4A/WAV at the end of each run
+- **Chunk size** — `source.chunk_size` controls how many files/blocks are grouped into one audio chunk. Set to `1` for one audio file per chapter. Changing it re-chunks the book, so the run starts fresh rather than reusing the old chunk audio
+- **Output** — audio chunks are merged into a single MP3/M4A/WAV at the end of each run and loudness-normalized to ~-19 LUFS (an audiobook-standard level). The merge re-encodes the whole book, so the time scales with its length; on a very large book (many hours) that would exceed the timeout, it merges without normalization and logs a warning — re-run `pdf2audio merge` for a normalized file
+- **Language** — tuned for English/Latin-script books (the default `af_heart` voice). Other languages synthesize, but the chunk/context sizing assumes space-delimited words, so space-less scripts (Japanese/Chinese) are best-effort
 
 ## Development
 
