@@ -77,7 +77,7 @@ class AudioEngine:
 
         return self._kokoro
 
-    def _chunk_text(self, text: str, max_chars: int = 200) -> list[str]:
+    def _chunk_text(self, text: str, max_chars: int = _MAX_TTS_CHARS) -> list[str]:
         chunks: list[str] = []
         paragraphs = text.split("\n")
         for p in paragraphs:

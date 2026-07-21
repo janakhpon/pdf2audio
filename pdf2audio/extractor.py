@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import zipfile
 from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -16,8 +17,13 @@ from pdf2audio.logger import logger
 if TYPE_CHECKING:
     from docling.document_converter import DocumentConverter
 
-# Reject implausibly large inputs early rather than OOM-ing deep inside docling/ebooklib.
-_MAX_FILE_BYTES = 500 * 1024 * 1024  # 500 MB
+# Reject implausibly large inputs early rather than OOM-ing deep inside docling/ebooklib. The
+# on-disk cap bounds the COMPRESSED size only; an EPUB is a zip and a PDF's page count each blow up
+# memory after decompression/parsing, so also cap the decompressed EPUB payload (zip-bomb guard) and
+# the PDF page count.
+_MAX_FILE_BYTES = 500 * 1024 * 1024  # 500 MB on disk
+_MAX_EPUB_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB decompressed
+_MAX_PDF_PAGES = 3000
 
 # Hard ceiling on words per chunk. A local model faithfully rewrites short passages but summarizes
 # long ones, so an oversized chunk would be rejected by the editor's completeness guard and narrated
@@ -131,7 +137,8 @@ class DocumentExtractor:
         # Docling extracts natively as Markdown.
         converter = self._get_docling_converter()
         try:
-            result = converter.convert(str(file_path))
+            # max_num_pages bounds a pathological page count so docling can't run for hours / OOM.
+            result = converter.convert(str(file_path), max_num_pages=_MAX_PDF_PAGES)
             markdown_text = result.document.export_to_markdown()
         except Exception as exc:  # docling raises a variety of untyped errors
             raise ExtractionError(f"Could not extract PDF {file_path.name}: {exc}") from exc
@@ -154,7 +161,22 @@ class DocumentExtractor:
 
         logger.info(f"Extracted {count} chunks from PDF.")
 
+    def _check_epub_uncompressed(self, file_path: Path) -> None:
+        """Reject a decompression-bomb EPUB: the on-disk cap only bounds the compressed zip, but
+        ebooklib loads the whole thing into memory, so a small file can expand to many GB."""
+        try:
+            with zipfile.ZipFile(file_path) as zf:
+                total = sum(info.file_size for info in zf.infolist())
+        except zipfile.BadZipFile as exc:
+            raise ExtractionError(f"Not a valid EPUB (bad zip): {file_path.name}: {exc}") from exc
+        if total > _MAX_EPUB_UNCOMPRESSED_BYTES:
+            raise ExtractionError(
+                f"EPUB decompresses to {total // 1024**2} MB "
+                f"(> {_MAX_EPUB_UNCOMPRESSED_BYTES // 1024**2} MB): {file_path.name}"
+            )
+
     def _process_epub(self, file_path: Path) -> Iterator[str]:
+        self._check_epub_uncompressed(file_path)
         try:
             book = epub.read_epub(str(file_path))
         except Exception as exc:  # ebooklib raises untyped errors on malformed EPUBs

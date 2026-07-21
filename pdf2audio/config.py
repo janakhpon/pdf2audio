@@ -40,6 +40,8 @@ SUPPORTED_AUDIO_FORMATS = {"mp3", "m4a", "wav"}
 VALID_EDITOR_MODES = {"short", "medium", "full"}
 MAX_CHUNK_SIZE = 10_000  # guard against an accidental huge value causing OOM at extraction
 MIN_NUM_CTX = 512  # below this the model can't hold a chunk + its rewrite
+MAX_NUM_CTX = 131_072  # above this a typo would make Ollama allocate a huge KV cache and OOM
+MAX_TIMEOUT = 3_600  # a single-chunk LLM request over an hour is a hang, not a slow model
 
 
 def load_config(config_path: str | Path | None = None) -> Config:
@@ -89,15 +91,20 @@ def load_config(config_path: str | Path | None = None) -> Config:
         editor_timeout = int(data.get("editor", {}).get("timeout", 600))
     except (TypeError, ValueError) as exc:
         raise ConfigError(f"editor.timeout must be an integer (seconds): {exc}") from exc
-    if editor_timeout <= 0:
-        raise ConfigError(f"editor.timeout must be > 0, got {editor_timeout}")
+    if not 0 < editor_timeout <= MAX_TIMEOUT:
+        raise ConfigError(
+            f"editor.timeout must be between 1 and {MAX_TIMEOUT}s, got {editor_timeout}"
+        )
 
     try:
         editor_num_ctx = int(data.get("editor", {}).get("num_ctx", 8192))
     except (TypeError, ValueError) as exc:
         raise ConfigError(f"editor.num_ctx must be an integer: {exc}") from exc
-    if editor_num_ctx < MIN_NUM_CTX:
-        raise ConfigError(f"editor.num_ctx must be >= {MIN_NUM_CTX}, got {editor_num_ctx}")
+    if not MIN_NUM_CTX <= editor_num_ctx <= MAX_NUM_CTX:
+        # Upper bound guards a typo that would make Ollama allocate a huge KV cache and OOM the box.
+        raise ConfigError(
+            f"editor.num_ctx must be between {MIN_NUM_CTX} and {MAX_NUM_CTX}, got {editor_num_ctx}"
+        )
 
     try:
         audio_speed = float(data.get("audio", {}).get("speed", 1.0))

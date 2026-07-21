@@ -57,9 +57,12 @@ def document_hash(doc_path: Path, config: Config) -> str:
     filenames + mtimes stand in for content so a large book isn't fully re-read each run.
     """
     hasher = hashlib.md5(usedforsecurity=False)  # a cache key, not a security digest
+    # chunk_size MUST be in the key: it moves the chunk boundaries, so the text behind each
+    # chunk_NNNN index changes. Without it, a re-run after changing chunk_size silently reuses the
+    # old chunking's audio (wrong text-to-audio mapping, or a stale merge over the old indices).
     config_state = (
         f"{config.audio_voice}_{config.audio_speed}_{config.editor_model}_"
-        f"{config.editor_mode}_{config.editor_enabled}"
+        f"{config.editor_mode}_{config.editor_enabled}_{config.chunk_size}"
     )
     hasher.update(config_state.encode("utf-8"))
 

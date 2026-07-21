@@ -61,7 +61,13 @@ def test_editor_num_ctx_override(tmp_path):
 
 def test_editor_num_ctx_too_small_raises(tmp_path):
     body = _VALID_BODY.replace("timeout: 600", "timeout: 600\n      num_ctx: 100")
-    with pytest.raises(ConfigError, match="num_ctx must be >="):
+    with pytest.raises(ConfigError, match="num_ctx must be between"):
+        load_config(_write_config(tmp_path, body))
+
+
+def test_editor_num_ctx_too_large_raises(tmp_path):
+    body = _VALID_BODY.replace("timeout: 600", "timeout: 600\n      num_ctx: 999999999")
+    with pytest.raises(ConfigError, match="num_ctx must be between"):
         load_config(_write_config(tmp_path, body))
 
 
@@ -142,10 +148,10 @@ def test_valid_editor_modes(tmp_path, mode):
     assert load_config(_write_config(tmp_path, body)).editor_mode == mode
 
 
-@pytest.mark.parametrize("bad", [0, -5])
-def test_editor_timeout_non_positive_raises(tmp_path, bad):
+@pytest.mark.parametrize("bad", [0, -5, 999999])
+def test_editor_timeout_out_of_range_raises(tmp_path, bad):
     body = _VALID_BODY.replace("timeout: 600", f"timeout: {bad}")
-    with pytest.raises(ConfigError, match="editor.timeout must be > 0"):
+    with pytest.raises(ConfigError, match="editor.timeout must be between"):
         load_config(_write_config(tmp_path, body))
 
 

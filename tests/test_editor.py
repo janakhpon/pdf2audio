@@ -351,6 +351,21 @@ def test_full_mode_falls_back_to_raw_when_polish_collapses(monkeypatch):
     assert editor.last_degraded is True
 
 
+def test_null_message_falls_back_to_raw_without_crashing(monkeypatch):
+    # Some Ollama-compatible endpoints return {"message": null}. That must degrade to the raw text,
+    # not raise an AttributeError that escapes both handlers and aborts the whole run.
+    editor = SmartEditor(make_config(editor_mode="full"))
+    editor._validated = True
+    raw = "word " * 50
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda req, timeout=None: _FakeResponse({"message": None}),
+    )
+    assert editor.process_transcript(raw) == raw
+    assert editor.last_degraded is True
+
+
 def test_full_mode_falls_back_to_raw_on_output_truncation(monkeypatch):
     editor = SmartEditor(make_config(editor_mode="full"))
     editor._validated = True

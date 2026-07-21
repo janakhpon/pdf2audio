@@ -35,10 +35,16 @@ _QUEUE_MAXSIZE = 3  # cap buffered chunks awaiting TTS
 
 
 def is_structural_noise(text: str) -> bool:
-    """True for a table-of-contents / index / list-of-figures page: dominated by dot leaders and
-    page numbers, which have no spoken value. Such chunks are skipped (not narrated). Ordinary
-    prose never has several dot-leader runs, so this does not fire on real content."""
-    return len(re.findall(r"\.{4,}", text)) >= 3
+    """True for a table-of-contents / index / list-of-figures page: dot-leader runs (title .... N)
+    dense relative to the word count. Such a page has no spoken value and is skipped, not narrated.
+
+    Gated on DENSITY, not an absolute count, so a mostly-prose chunk that merely straddles the tail
+    of a TOC (a few stray leaders among real paragraphs) is still narrated rather than silently
+    dropped whole — those few leaders are stripped later in sanitize_for_tts. Ordinary prose has
+    essentially no dot-leader runs, so this never fires on real content."""
+    runs = len(re.findall(r"\.{4,}", text))
+    words = len(text.split())
+    return runs >= 3 and runs * 20 >= words
 
 
 def sanitize_for_tts(text: str) -> str:
@@ -68,9 +74,11 @@ def sanitize_for_tts(text: str) -> str:
     # Table-of-contents / index dot leaders and their page numbers ("Title..... 80"). 4+ dots so a
     # normal "..." ellipsis is left alone.
     text = re.sub(r"\.{4,}\s*\d*", " ", text)
-    # Pipe tables: drop separator rows, then read remaining cells as a short spoken list.
+    # Pipe tables -> spoken list, but ONLY a line shaped like a real markdown row: a leading pipe
+    # then 2+ cells (`| a | b |`). Pipes in prose/math mean "given" / set-builder / absolute value
+    # (P(A|B), {x | x>0}, |x|) and are left ALONE, so we don't turn a conditional into a joint.
     text = re.sub(r"(?m)^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$", " ", text)  # |---|:--:| separator rows
-    text = re.sub(r"\s*\|\s*", ", ", text)  # cell dividers -> comma pause
+    text = re.sub(r"(?m)^\s*\|(?:[^|\n]*\|){2,}\s*$", lambda m: m.group(0).replace("|", ", "), text)
     text = re.sub(r"\*+", "", text)  # bold/italic asterisks
     text = re.sub(r"#+\s*", "", text)  # headings
     text = re.sub(r"`+", "", text)  # code ticks
@@ -131,28 +139,35 @@ def process_document(doc_path: Path, config: Config) -> None:
                 job = job_queue.get()
                 if job is None:
                     break
-                chunk_idx, text, audio_out = job
-                for attempt in range(_MAX_TTS_RETRIES):
-                    try:
-                        audio_engine.generate(text, audio_out)
-                        store.mark(doc_hash, chunk_idx, ChunkStatus.DONE)
-                        break
-                    except Exception:
-                        # A background worker must never die silently; retry then mark FAILED.
-                        if attempt == _MAX_TTS_RETRIES - 1:
-                            store.mark(doc_hash, chunk_idx, ChunkStatus.FAILED)
-                            logger.exception(
-                                f"TTS failed after {_MAX_TTS_RETRIES} attempts for chunk "
-                                f"{chunk_idx}; marking FAILED"
-                            )
-                        else:
-                            delay = 2**attempt
-                            logger.warning(
-                                f"TTS error (attempt {attempt + 1}/{_MAX_TTS_RETRIES}); "
-                                f"retrying in {delay}s"
-                            )
-                            time.sleep(delay)
-                job_queue.task_done()
+                try:
+                    chunk_idx, text, audio_out = job
+                    for attempt in range(_MAX_TTS_RETRIES):
+                        try:
+                            audio_engine.generate(text, audio_out)
+                            store.mark(doc_hash, chunk_idx, ChunkStatus.DONE)
+                            break
+                        except Exception:
+                            # A background worker must never die silently; retry then mark FAILED.
+                            if attempt == _MAX_TTS_RETRIES - 1:
+                                store.mark(doc_hash, chunk_idx, ChunkStatus.FAILED)
+                                logger.exception(
+                                    f"TTS failed after {_MAX_TTS_RETRIES} attempts for chunk "
+                                    f"{chunk_idx}; marking FAILED"
+                                )
+                            else:
+                                delay = 2**attempt
+                                logger.warning(
+                                    f"TTS error (attempt {attempt + 1}/{_MAX_TTS_RETRIES}); "
+                                    f"retrying in {delay}s"
+                                )
+                                time.sleep(delay)
+                except Exception:
+                    # Even the FAILED-mark or logging can throw (e.g. a locked SQLite). The worker
+                    # must never die before draining the job, or the main thread blocks forever on
+                    # the bounded queue and the whole run hangs.
+                    logger.exception("Unexpected TTS worker error; continuing")
+                finally:
+                    job_queue.task_done()
 
         worker_thread = threading.Thread(target=tts_worker, name="tts-worker", daemon=True)
         worker_thread.start()

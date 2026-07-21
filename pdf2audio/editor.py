@@ -232,6 +232,9 @@ class SmartEditor:
                 "num_ctx": self.num_ctx,
                 # Low temperature keeps the rewrite faithful and on-task rather than embellishing.
                 "temperature": _TEMPERATURE,
+                # Let the rewrite run to completion (bounded by num_ctx). Without this, a small
+                # server-default num_predict would truncate every chunk and force the raw fallback.
+                "num_predict": -1,
             },
         }
         data = json.dumps(payload).encode("utf-8")
@@ -254,9 +257,10 @@ class SmartEditor:
                     )
                     self.last_degraded = True
                     return text
-                polished = self._strip_artifacts(
-                    str(result.get("message", {}).get("content", "")).strip()
-                )
+                # `or {}` guards a null message (some Ollama-compatible endpoints return
+                # {"message": null}); result.get("message", {}) would return None, not the default.
+                message = result.get("message") or {}
+                polished = self._strip_artifacts(str(message.get("content", "")).strip())
                 if polished:
                     if self.mode == "full":
                         raw_words = len(text.split())
