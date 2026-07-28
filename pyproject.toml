@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "pdf2audio"
 version = "0.1.0"
-description = "A simple, open-source tool that converts PDFs into audiobooks for free"
+description = "Convert PDF, EPUB, and HTML books into audiobooks locally"
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.11"
@@ -23,43 +23,60 @@ classifiers = [
 ]
 
 dependencies = [
-    "torch>=1.9.0",
-    "transformers>=4.20.0",
-    "TTS>=0.8.0",
-    "PyPDF2>=3.0.0",
-    "psutil>=5.8.0",
-    "tqdm>=4.62.0",
-    "pydub>=0.25.1",
-    "gtts>=2.2.3",
+    "kokoro-onnx>=0.5.0",
+    "soundfile>=0.14.0",
+    "numpy>=2.0",
+    "PyYAML>=6.0.3",
+    "docling>=2.112.0",
+    "ebooklib>=0.20",
+    "beautifulsoup4>=4.15.0",
+    "nltk>=3.10.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0.0",
-    "black>=23.0.0",
-    "isort>=5.12.0",
-    "flake8>=6.0.0",
+    "pytest>=8.0.0",
+    "ruff>=0.15.0",
+    "mypy>=1.11.0",
+    "types-PyYAML>=6.0.0",
 ]
+
+[project.scripts]
+pdf2audio = "pdf2audio.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["."]
-include = [
-    "*.py",
-    "LICENSE",
-    "README.md",
-    "summarizer_config.json",
-]
+packages = ["pdf2audio"]
 
-[tool.black]
-line-length = 88
-target-version = ['py311']
+[tool.ruff]
+line-length = 100
+src = ["pdf2audio", "tests"]
+target-version = "py311"
 
-[tool.isort]
-profile = "black"
-line_length = 88
+[tool.ruff.lint]
+# E/W pycodestyle, F pyflakes, I isort, UP pyupgrade, B bugbear, SIM simplify.
+select = ["E", "W", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["pdf2audio"]
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+
+# Third-party libraries without type stubs — scope the untyped boundary here.
+[[tool.mypy.overrides]]
+module = ["docling.*", "ebooklib", "kokoro_onnx.*", "soundfile", "nltk", "bs4"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+markers = [
+    "e2e: real end-to-end test using the actual kokoro model + ffmpeg; auto-skips when absent",
+]

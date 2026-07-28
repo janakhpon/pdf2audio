@@ -1,0 +1,45 @@
+# PDF to Audio Configuration
+
+# Input settings
+source:
+  # Path can be a single file, a directory, or an array of specific files.
+  # Examples:
+  # path: "books/"
+  path: "books/build-fine-tune-small-language-model-programmers.pdf"
+  # path:
+  #   - "books/part1.pdf"
+  #   - "books/part2.pdf"
+  # path: "/Users/zinmin/Downloads/system-design-interview-bytebytego"
+  chunk_size: 6           # Coarse grouping (HTML: files/chunk; PDF: markdown block groups × 10).
+                          # A hard ~1200-word cap then splits any oversized result so the editor
+                          # can rewrite each chunk faithfully instead of summarizing it.
+
+# Transcription and Smart Editor settings
+editor:
+  enabled: true          # Set to false to bypass transcription and Ollama completely
+  model: "qwen2.5:14b"   # Local Ollama model for the Smart Editor (see README for other options).
+                          # Pick a model that FITS in RAM: on 24GB, gemma3:27b (~17GB) swaps to
+                          # disk and runs ~10x slower. qwen2.5:14b (~9GB) leaves headroom.
+  mode: "full"            # Options: "short" (summarize), "medium" (summarize), "full" (faithful
+                          # verbatim rewrite for a complete audiobook, NOT a summary).
+  preserve_context: true  # Dynamically passes the summary of the previous chunk into the next chunk to guarantee coherent narrative flow across 1,000+ page books
+  url: "http://localhost:11434"
+  timeout: 600            # Timeout in seconds for LLM generation requests
+  num_ctx: 8192           # Ollama context window (tokens), constant per run. Sized to the ~1200-word
+                          # chunk cap: chunk + rewrite + prompt is ~5-6k tokens, so 8192 fits with
+                          # headroom (KV cache ~1.5GB). qwen2.5:14b handles 32k, but a bigger window
+                          # here only wastes RAM. Raise only if you raise the chunk word cap.
+
+# Audio Generation settings
+audio:
+  model_path: "assets/models/kokoro-v1.0.onnx"
+  voices_path: "assets/models/voices-v1.0.bin"
+  voice: "af_heart"       # Voice profile (e.g. af_alloy, am_adam, af_heart)
+  speed: 1.0              # Playback speed (e.g. 1.0, 1.2, 1.5)
+  format: "mp3"           # Output audio format (options: wav, mp3, m4a)
+
+# Output settings
+output:
+  audio_dir: "output/audio"
+  transcripts_dir: "output/transcripts"
+  save_transcripts: true  # Whether to save the text files alongside the generated audio
