@@ -1,59 +1,43 @@
 # pdf2audio
 
-Convert PDFs, EPUBs, and HTML books into audiobooks — offline, on your own hardware.
-
-## Supported Formats
-
-| Format             | How it works                                                                                                     |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| **PDF**            | Uses `docling` for layout-aware extraction — handles multi-column text, headers, and tables correctly            |
-| **EPUB**           | Parses chapters sequentially via `ebooklib`                                                                      |
-| **HTML directory** | Sorts files naturally (0, 1, 2… or named chapters), strips nav/script/style tags, extracts clean reading content |
-
-## How It Works
+Convert PDF, EPUB and HTML books into audiobooks on your own machine, with no cloud APIs. It
+extracts the text, optionally rewrites it for listening with a local LLM, synthesizes speech with
+Kokoro and merges the result into one audio file.
 
 ```
-Document → Extract text → LLM polish (optional) → TTS synthesis → Merge to MP3
+Document → Extract text → LLM polish (optional) → TTS synthesis → Merge to MP3/M4A/WAV
 ```
 
-The optional Smart Editor rewrites each chunk into clean spoken narration — dropping page numbers,
-figure/table references, and layout artifacts that only make sense on a page — while preserving the
-meaning. If it is unavailable or would drop content, the pipeline narrates the complete extracted
-text instead, so nothing meaningful is lost.
+- **Inputs:** a PDF (layout-aware extraction with `docling`: multi-column text, headers, tables),
+  an EPUB (chapters in order via `ebooklib`), or a folder of HTML files (natural sort order;
+  nav, script and style tags stripped).
+- **Local:** text and audio stay on your machine.
+- **Resumable:** SQLite tracks every chunk. Stop it at any time and re-run to continue.
+- **Pipelined:** extraction and LLM polish run on the main thread while TTS runs on a worker
+  behind a bounded queue, so synthesis overlaps with reading the next chunk.
+- **Optional Smart Editor:** rewrites each chunk into spoken narration, dropping page numbers and
+  layout artifacts. If it is unavailable or would drop content, the full extracted text is
+  narrated instead. See [docs/smart-editor.md](docs/smart-editor.md).
 
-- **Local** — no cloud APIs; text and audio stay on your machine (see the first-run note below)
-- **Resumable** — SQLite tracks every chunk; kill it anytime and re-run to continue
-- **Streaming** — extraction yields chunk-by-chunk, so EPUB/HTML books are processed incrementally rather than all at once. Note: PDF extraction loads the whole document into memory (a `docling` limitation), so peak memory scales with the size of a single PDF
-- **Pipelined** — extraction and LLM polishing run on the main thread while TTS synthesis runs on a separate worker (bounded queue), so audio generation overlaps with reading the next chunk
+## Setup
 
-> **First-run / offline note:** the first run downloads the NLTK `punkt_tab` sentence tokenizer (~a few MB, one time). After that the pipeline runs fully offline. The TTS models (below) and any Ollama model must also be downloaded ahead of time.
-
-## Quick Start
-
-### Prerequisites
-
-- Python 3.11+
-- [`uv`](https://github.com/astral-sh/uv) package manager
-- `ffmpeg` (`brew install ffmpeg`)
-- [Ollama](https://ollama.ai) (optional, for transcript polishing)
-
-### Install
+Needs Python 3.11+, [`uv`](https://github.com/astral-sh/uv), `ffmpeg` (`brew install ffmpeg`) and,
+only for the Smart Editor, [Ollama](https://ollama.ai).
 
 ```bash
 git clone git@github.com:janakhpon/pdf2audio.git
 cd pdf2audio
 uv sync
-```
 
-### Download TTS models
-
-```bash
 mkdir -p assets/models
 curl -sL https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx \
      -o assets/models/kokoro-v1.0.onnx
 curl -sL https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin \
      -o assets/models/voices-v1.0.bin
 ```
+
+The first run also downloads the NLTK `punkt_tab` sentence tokenizer (a few MB, once). After that
+the pipeline runs fully offline, provided the TTS models and any Ollama model are already present.
 
 ## Usage
 
@@ -66,84 +50,45 @@ audio:
   voice: "af_heart" # see docs/voices.md for the full list
   format: "mp3" # mp3 | m4a | wav
 editor:
-  enabled: false # true = polish the text with a local Ollama model first (optional)
+  enabled: false # true = polish the text with a local Ollama model first
 ```
 
-The editor is optional — with it off, the extracted text is narrated directly. The bundled
-`config.yaml` enables it with `qwen2.5:14b`; see the model guidance below.
-
-Then, from the project directory:
+The bundled `config.yaml` enables the editor with `qwen2.5:14b`. Set `enabled: false` if you do
+not run Ollama, or pick a model that fits your RAM: [docs/smart-editor.md](docs/smart-editor.md).
 
 ```bash
-uv run pdf2audio preview       # hear the configured voice — a ~3s sample
-uv run pdf2audio run --dry-run # list the documents that would be processed; makes no changes
-uv run pdf2audio run           # the full pipeline: extract → (polish) → synthesize → merge
+uv run pdf2audio preview       # hear the configured voice in a short sample
+uv run pdf2audio run --dry-run # list the documents that would be processed; changes nothing
+uv run pdf2audio run           # extract → (polish) → synthesize → merge
+uv run pdf2audio merge         # re-merge chunk audio from a prior run
 ```
 
-The finished audiobook is written to **`output/audio/<name>_full.<format>`**, with the
-per-chapter audio chunks and transcripts kept alongside it under `output/`.
+The audiobook is written to `output/audio/<name>_full.<format>`, with per-chapter audio chunks and
+transcripts kept under `output/`.
 
-**If a run is interrupted**, just run it again — every chunk's state is tracked in SQLite, so it
-resumes where it stopped and never re-synthesizes finished audio. If a run was cut off after the
-audio was made but before the final file was assembled, `uv run pdf2audio merge` stitches the
-chunks together.
+**If a run is interrupted, run it again.** It resumes where it stopped and never re-synthesizes
+finished audio. If it stopped after the audio was made but before the final file was assembled,
+`pdf2audio merge` stitches the chunks together.
 
 Global flags: `--config PATH` (default `config.yaml`) and `--log-level {DEBUG,INFO,WARNING,ERROR}`.
-Run `pdf2audio --help`, or `pdf2audio <command> --help`, for the full surface. (`python -m pdf2audio`
-works too.)
+`pdf2audio <command> --help` shows the rest; `python -m pdf2audio` also works.
 
-## Recommended Models for Transcript Polishing
+## Limits
 
-For the best audiobook quality, enable the `editor` block and use one of these models:
-
-| Model          | RAM needed | Best for                                                       |
-| -------------- | ---------- | -------------------------------------------------------------- |
-| `qwen2.5:14b`  | ~9 GB      | **Recommended default** — good quality, fits 16-24 GB machines |
-| `phi4:14b`     | ~9 GB      | Constrained hardware, punches above its weight                 |
-| `gemma3:27b`   | ~17 GB     | Excellent prose, but only if it fits (needs ~32 GB, see below) |
-| `qwen2.5:72b`  | ~45 GB     | Best raw quality if you have the RAM                           |
-| `llama3.3:70b` | ~45 GB     | Strong instruction-following, natural lecture tone             |
-
-**The model must fit in RAM.** The Smart Editor makes one LLM call per chunk (hundreds per book),
-so if the model does not fit alongside the OS and the TTS engine, Ollama pages it to disk and each
-call runs roughly 10x slower — a book can take a full day instead of a few hours. On a 24 GB
-machine, `gemma3:27b` (~17 GB) swaps once the OS + Python + Kokoro are loaded; `qwen2.5:14b` (~9 GB)
-leaves headroom. Pick the largest model that comfortably fits, not the largest you can load.
-
-Pull a model and set it in `config.yaml`:
-
-```bash
-ollama pull qwen2.5:14b
-```
-
-```yaml
-editor:
-  enabled: true
-  model: "qwen2.5:14b"
-  mode: "full" # "full" = faithful full narration (not a summary); "medium"/"short" summarize
-```
-
-**On dense technical books**, the editor is expected to produce a shorter narration than the source
-(it drops page-only noise — figure/page references, hex/ID dumps, verbatim code), and that polished
-result is trusted and used — including legitimately short renderings like an intro lead-in or a
-chapter summary. The complete raw text is used only when the polish is genuinely broken: empty,
-errored, truncated, or a near-empty fragment (a `using the complete raw text` log line). Worked-example
-data like hex values may still be read aloud, since the model keeps it as content; a stronger model or
-a smaller `chunk_size` improves this.
-
-**Table-of-contents and index pages are skipped** — they are dot-leaders and page numbers with no
-spoken value, so they are detected and not narrated (like a real audiobook).
-
-## Operational Notes
-
-- **Disk space** — the pipeline monitors free space mid-run and halts cleanly if it drops below 500 MB
-- **Chunk size** — `source.chunk_size` controls how many files/blocks are grouped into one audio chunk. Set to `1` for one audio file per chapter. Changing it re-chunks the book, so the run starts fresh rather than reusing the old chunk audio
-- **Output** — audio chunks are merged into a single MP3/M4A/WAV at the end of each run and loudness-normalized to ~-19 LUFS (an audiobook-standard level). The merge re-encodes the whole book, so the time scales with its length; on a very large book (many hours) that would exceed the timeout, it merges without normalization and logs a warning — re-run `pdf2audio merge` for a normalized file
-- **Language** — tuned for English/Latin-script books (the default `af_heart` voice). Other languages synthesize, but the chunk/context sizing assumes space-delimited words, so space-less scripts (Japanese/Chinese) are best-effort
+- **Memory:** EPUB and HTML are processed chunk by chunk. PDF extraction loads the whole document
+  into memory (a `docling` limitation), so peak memory scales with the size of a single PDF.
+- **Disk:** the pipeline checks free space during a run and halts cleanly below 500 MB.
+- **Chunk size:** `source.chunk_size` sets how many files or blocks form one audio chunk; `1` gives
+  one audio file per chapter. Changing it re-chunks the book, so the run starts fresh.
+- **Loudness:** the merged file is normalized to about -19 LUFS, an audiobook-standard level. The
+  merge re-encodes the whole book, so it takes longer on long books. If a very long book would
+  exceed the merge timeout, it merges without normalization and logs a warning; re-run
+  `pdf2audio merge` for a normalized file.
+- **Language:** tuned for English and Latin-script books (default voice `af_heart`). Other
+  languages synthesize, but chunk sizing assumes space-delimited words, so scripts without spaces
+  (Japanese, Chinese) are best-effort.
 
 ## Development
-
-Install the dev extras and run the quality gate (lint, format, type-check, tests):
 
 ```bash
 uv sync --extra dev
@@ -153,20 +98,27 @@ uv run mypy pdf2audio
 uv run pytest
 ```
 
-`pytest` runs the offline suite — the heavy dependencies (kokoro, docling, Ollama, ffmpeg) are
-mocked, so it needs no models or network and CI runs the same gate on every push and pull request.
+`pytest` runs offline: kokoro, docling, Ollama and ffmpeg are mocked, so it needs no models or
+network. CI runs the same gate on every push to `main` and every pull request.
 
-There is also an opt-in **end-to-end smoke test** that drives the *real* model and ffmpeg:
+An opt-in end-to-end test drives the real model and ffmpeg. Run it after changing `audio.py`,
+`pipeline.py` or `merge.py`; it proves a real audiobook still comes out end to end.
 
 ```bash
-uv run pytest -m e2e   # needs assets/models/ + ffmpeg; auto-skips if absent
+uv run pytest -m e2e   # needs assets/models/ and ffmpeg; skips itself if they are absent
 ```
-
-Run it locally after changing anything in `audio.py`, `pipeline.py`, or `merge.py` — it's the
-check that proves a real audiobook still comes out end to end.
 
 ## Documentation
 
-- [Architecture](docs/architecture.md) — pipeline design, concurrency model, and module breakdown
-- [Voices & languages](docs/voices.md) — all supported voices, languages, and speed tuning
-- Decision records — [ADR 0001](docs/adr/0001-audit-hardening.md) correctness/safety (see [audit](docs/audit.md)) · [ADR 0002](docs/adr/0002-staff-refactor.md) craftsmanship refactor (see [staff audit](docs/staff-audit.md)) · [ADR 0003](docs/adr/0003-perf-and-narration-quality.md) performance + narration quality
+- [Architecture](docs/architecture.md): pipeline design, concurrency model, modules
+- [Smart Editor](docs/smart-editor.md): model choice by RAM, what the editor keeps and drops
+- [Voices and languages](docs/voices.md): every voice, language and speed setting
+- Decision records: [ADR 0001](docs/adr/0001-audit-hardening.md) correctness and safety (see
+  [audit](docs/audit.md)) · [ADR 0002](docs/adr/0002-staff-refactor.md) craftsmanship refactor (see
+  [staff audit](docs/staff-audit.md)) · [ADR 0003](docs/adr/0003-perf-and-narration-quality.md)
+  performance and narration quality · [ADR 0004](docs/adr/0004-audit-hardening-and-loudness.md)
+  resumability, extraction limits and loudness
+
+## License
+
+MIT. See [LICENSE](LICENSE).
