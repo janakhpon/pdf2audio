@@ -17,7 +17,7 @@ source:
 # Transcription and Smart Editor settings
 editor:
   enabled: true          # Set to false to bypass transcription and Ollama completely
-  model: "qwen2.5:14b"   # Local Ollama model for the Smart Editor (see README for other options).
+  model: "qwen2.5:14b"   # Local Ollama model for the Smart Editor (see docs/smart-editor.md for other options).
                           # Pick a model that FITS in RAM: on 24GB, gemma3:27b (~17GB) swaps to
                           # disk and runs ~10x slower. qwen2.5:14b (~9GB) leaves headroom.
   mode: "full"            # Options: "short" (summarize), "medium" (summarize), "full" (faithful

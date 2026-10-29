@@ -59,7 +59,7 @@ math notation.
 - **Collapse floor stays at 0.10.** Trusting the polish unless it near-totally collapses is a
   deliberate product decision (complete-but-noisier raw is the fallback only when the model clearly
   breaks). Raising it to catch 40-89% condensation was considered and rejected as reversing that
-  call; the trade-off is now documented in the README.
+  call; the trade-off is now documented in the README (now docs/smart-editor.md).
 - **CJK counting.** The `//4` token estimate and `.split()` word counts assume space-delimited text.
   The tool is English/Latin-focused (default `af_heart`); CJK is documented as best-effort rather
   than given a script-aware tokenizer (out of scope at current use).

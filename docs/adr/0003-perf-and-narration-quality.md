@@ -22,7 +22,7 @@ also surfaced correctness gaps around merging, TTS language, and config bounds.
 1. **Default to a model that fits in RAM.** `gemma3:27b` → `qwen2.5:14b` (~9 GB). The editor makes
    one LLM call per chunk (hundreds per book); a model that does not fit swaps to disk and runs an
    order of magnitude slower. Pick the largest model that comfortably fits, not the largest that
-   loads. The README documents the rule and lists RAM-sized options.
+   loads. The README documents the rule and lists RAM-sized options (now docs/smart-editor.md).
 
 2. **Tune the Ollama request.** Set `keep_alive` so the model stays resident between chunks; set a
    `num_ctx` large enough for a chunk plus its rewrite (Ollama's small default silently truncated
